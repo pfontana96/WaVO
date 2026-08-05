@@ -30,8 +30,12 @@ pip install .
 For development (rebuilds the extension automatically on import after C++ changes):
 
 ```sh
-pip install -e . -v --config-settings=editable.rebuild=true
+pip install -e .[dev] -v --config-settings=editable.rebuild=true
+pre-commit install
 ```
+
+Formatting is enforced by pre-commit hooks: `clang-format` (Google-based, see
+[.clang-format](.clang-format)) on C/C++ and `black` on Python.
 
 ## Test
 

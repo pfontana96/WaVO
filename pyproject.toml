@@ -25,6 +25,7 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+dev = ["pytest", "pre-commit", "black"]
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"
@@ -33,3 +34,6 @@ wheel.packages = ["src/wavo"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.black]
+target-version = ["py39"]
