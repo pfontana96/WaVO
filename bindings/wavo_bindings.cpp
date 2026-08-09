@@ -12,7 +12,6 @@
 #include "image/RGBDFrame.hpp"
 #include "image/Registration.hpp"
 #include "image/fft.hpp"
-#include "wavo/core.hpp"
 
 namespace py = pybind11;
 
@@ -100,13 +99,6 @@ namespace {
 using wavo::image::CameraIntrinsics;
 using wavo::image::RGBDFrame;
 
-py::array_t<double> hann_window_2d(std::size_t rows, std::size_t cols) {
-  auto data = wavo::hann_window_2d(rows, cols);
-  py::array_t<double> out({rows, cols});
-  std::copy(data.begin(), data.end(), out.mutable_data());
-  return out;
-}
-
 CameraIntrinsics make_intrinsics(const cv::Mat& K, const cv::Mat& dist_coeffs,
                                  float no_valid_point) {
   if (K.rows != 3 || K.cols != 3 || K.channels() != 1)
@@ -131,9 +123,6 @@ cv::Size to_size(std::pair<int, int> wh) { return {wh.first, wh.second}; }
 
 PYBIND11_MODULE(_core, m) {
   m.doc() = "WaVO C++ core — Fourier-based visual odometry";
-
-  m.def("hann_window_2d", &hann_window_2d, py::arg("rows"), py::arg("cols"),
-        "Periodic 2-D Hann window of shape (rows, cols).");
 
   py::module image = m.def_submodule("image", "RGB-D frames for registration");
 

@@ -17,8 +17,9 @@ find_package(pybind11 CONFIG REQUIRED)
 find_package(OpenCV 4 REQUIRED)
 
 # Core C++ library — no Python dependency, so it can be reused / tested natively.
-add_library(wavo_core STATIC cpp/src/core.cpp src/image/RGBDFrame.cpp
-                             src/image/fft.cpp src/image/Registration.cpp)
+file(GLOB_RECURSE WAVO_CORE_SOURCES CONFIGURE_DEPENDS
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+add_library(wavo_core STATIC ${WAVO_CORE_SOURCES})
 target_include_directories(
   wavo_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include
                    ${CMAKE_CURRENT_SOURCE_DIR}/include)
