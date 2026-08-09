@@ -1,6 +1,9 @@
+# scikit-build-core-conan wraps scikit-build-core: it runs `conan install`
+# (resolving conanfile.txt, auto-detecting a profile if needed) and passes the
+# generated toolchain to CMake, so `pip install .` needs no manual Conan setup.
 [build-system]
-requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
-build-backend = "scikit_build_core.build"
+requires = ["scikit-build-core-conan>=0.6", "pybind11>=2.12"]
+build-backend = "scikit_build_core_conan.build"
 
 [project]
 name = "wavo"
@@ -26,10 +29,24 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest"]
-dev = ["pytest", "pre-commit", "black"]
+# The editable rebuild-on-import re-runs CMake outside pip's isolated build
+# env, so the build tooling must live in the dev venv (install with
+# --no-build-isolation, see README).
+dev = [
+  "pytest",
+  "pre-commit",
+  "black",
+  "ninja",
+  "pybind11>=2.12",
+  "scikit-build-core-conan>=0.6",
+]
+
+# Persistent Conan output folder: the generated toolchain must outlive the
+# build so editable rebuilds-on-import can re-run CMake.
+[tool.scikit-build-core-conan]
+output-folder = "build/conan"
 
 [tool.scikit-build]
-minimum-version = "build-system.requires"
 build-dir = "build/{wheel_tag}"
 wheel.packages = ["src/wavo"]
 

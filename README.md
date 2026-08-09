@@ -27,6 +27,21 @@ built with [scikit-build-core](https://github.com/scikit-build/scikit-build-core
 Requires Python ≥ 3.9 and a C++17 compiler. CMake and pybind11 are pulled in
 automatically by the build backend.
 
+Native dependencies (currently OpenCV core + imgproc, see
+[conanfile.txt](conanfile.txt)) are resolved with [Conan](https://conan.io)
+by the [scikit-build-core-conan](https://github.com/wu-vincent/scikit-build-core-conan)
+build backend — no manual Conan setup is needed. The first build compiles a
+minimal static OpenCV (a few minutes); it is cached in `~/.conan2`, so later
+builds are fast.
+
+To consume the C++ library directly (without Python), use the same conanfile:
+
+```sh
+conan install . --build=missing -s build_type=Release
+cmake --preset conan-release
+cmake --build --preset conan-release
+```
+
 ```sh
 pip install .
 ```
@@ -34,9 +49,13 @@ pip install .
 For development (rebuilds the extension automatically on import after C++ changes):
 
 ```sh
-pip install -e .[dev] -v --config-settings=editable.rebuild=true
+pip install .[dev]  # puts the build tooling (conan, cmake, ninja…) in the venv
+pip install -e . -v --no-build-isolation --config-settings=editable.rebuild=true
 pre-commit install
 ```
+
+(`--no-build-isolation` matters: rebuild-on-import re-runs CMake outside pip,
+so the build tooling and the Conan toolchain must persist in your environment.)
 
 Formatting is enforced by pre-commit hooks: `clang-format` (Google-based, see
 [.clang-format](.clang-format)) on C/C++ and `black` on Python.

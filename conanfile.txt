@@ -1,0 +1,27 @@
+[requires]
+opencv/4.14.0
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[layout]
+cmake_layout
+
+# Minimal static OpenCV: core (implicit), imgproc, calib3d (+ its features2d
+# and flann dependencies). Trimmed modules keep the from-source build small;
+# the result is cached in ~/.conan2 across builds.
+[options]
+opencv/*:shared=False
+# ICV: the free IPP subset bundled by OpenCV — big speedup on dft/warps/remap.
+opencv/*:with_ipp=opencv-icv
+opencv/*:dnn=False
+opencv/*:gapi=False
+opencv/*:highgui=False
+opencv/*:imgcodecs=False
+opencv/*:ml=False
+opencv/*:objdetect=False
+opencv/*:photo=False
+opencv/*:stitching=False
+opencv/*:video=False
+opencv/*:videoio=False

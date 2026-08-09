@@ -4,8 +4,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar, Iterator
 
-from wavo.image import CameraIntrinsics
 from wavo.rgbd_datasets.base_entry import BaseRGBDEntry
+
+from wavo._core.image import CameraIntrinsics
 
 
 class RGBDDatasetLoader(ABC):

@@ -9,8 +9,9 @@ import open3d.core as o3c
 from wavo.rgbd_datasets import RGBDDatasetLoader, BaseRGBDEntry
 from wavo.correspondences import find_dense_correspondences, deproject
 from wavo.pose_estimation import estimate_pose
-from wavo.image import CameraIntrinsics
-from wavo.registration import ImageRegistrator
+
+from wavo._core.image import RGBDFrame, CameraIntrinsics
+from wavo._core.image.registration import ImageRegistrator
 
 TUM_INTRINSICS = CameraIntrinsics(
     K=np.array(
@@ -22,6 +23,48 @@ TUM_INTRINSICS = CameraIntrinsics(
     ),
     dist_coeffs=np.array([0.2312, -0.7849, -0.0033, -0.0001, 0.9172]),
 )
+
+
+def plot(frame: RGBDFrame):
+
+    _, axs = plt.subplots(3, 3, figsize=(12, 12))
+
+    re, im = cv2.split(frame.shifted_dft)
+    log_mag = np.log1p(cv2.magnitude(re, im))
+    phase = cv2.phase(re, im)
+
+    axs[0, 0].imshow(cv2.cvtColor(frame.color, cv2.COLOR_BGR2RGB))
+    axs[0, 0].set_title("color")
+
+    axs[0, 1].imshow(frame.gray, cmap="gray")
+    axs[0, 1].set_title("gray")
+
+    axs[0, 2].imshow(frame.gray_zero_mean, cmap="gray")
+    axs[0, 2].set_title("gray zero-mean")
+
+    axs[1, 1].imshow(log_mag, cmap="gray")
+    axs[1, 1].set_title("shifted dft log magnitude")
+
+    axs[1, 2].imshow(phase, cmap="gray")
+    axs[1, 2].set_title("shifted dft phase")
+
+    axs[1, 0].axis("off")
+
+    lp_re, lp_im = cv2.split(np.fft.fftshift(frame.log_polar_dft))
+    lp_log_mag = np.log1p(cv2.magnitude(lp_re, lp_im))
+    lp_phase = phase = cv2.phase(lp_re, lp_im)
+
+    axs[2, 0].imshow(lp_log_mag, cmap="gray")
+    axs[2, 0].set_title("log-polar dft log magnitude")
+
+    axs[2, 1].imshow(lp_phase, cmap="gray")
+    axs[2, 1].set_title("log-polar dft phase")
+
+    axs[2, 2].axis("off")
+
+    for ax in axs.flat:
+        ax.set_xticks([])
+        ax.set_yticks([])
 
 
 def show_entries(source_entry: BaseRGBDEntry, target_entry: BaseRGBDEntry):
@@ -91,46 +134,47 @@ if __name__ == "__main__":
     print(f"Stamp difference: {entry_b.stamp - entry_a.stamp}")
 
     # show_entries(entry_a, entry_b)
-
-    img_a = entry_a.rgbd_image
-    img_b = entry_b.rgbd_image
-
-    img_a.frame.plot()
-    img_b.frame.plot()
+    plot(entry_a.rgbd_frame)
 
     start = perf_counter()
-    phase_corr_result = ImageRegistrator.register_phase_correlation(img_a, img_b)
+    cpp_phase_corr_result = ImageRegistrator.register_phase_correlation(
+        entry_a.rgbd_frame, entry_b.rgbd_frame
+    )
     end = perf_counter()
-    print(f"Phase correlation registration took {end - start:.4f} s")
+    print(f"C++ phase correlation registration took {end - start:.4f} s")
 
     show_registration(
-        img_a.frame.gray,
-        img_b.frame.gray,
-        phase_corr_result.affine,
-        f"Phase Correlation (peak: {phase_corr_result.debug["peak"]:.4f})",
+        entry_a.rgbd_frame.gray,
+        entry_b.rgbd_frame.gray,
+        cpp_phase_corr_result.affine,
+        f"C++ Phase Correlation (peak: {cpp_phase_corr_result.peak:.4f})",
     )
 
     start = perf_counter()
-    fourier_mellin_result = ImageRegistrator.register_fourier_mellin(img_a, img_b)
+    cpp_fourier_mellin_result = ImageRegistrator.register_fourier_mellin(
+        entry_a.rgbd_frame, entry_b.rgbd_frame
+    )
     end = perf_counter()
-    print(f"Fourier-Mellin registration took {end - start:.4f} s")
+    print(f"C++ Fourier-Mellin registration took {end - start:.4f} s")
 
     show_registration(
-        img_a.frame.gray,
-        img_b.frame.gray,
-        fourier_mellin_result.affine,
-        f"Fourier-Mellin (peak: {fourier_mellin_result.debug["peak"]:.4f})",
+        entry_a.rgbd_frame.gray,
+        entry_b.rgbd_frame.gray,
+        cpp_fourier_mellin_result.affine,
+        f"Fourier-Mellin (peak: {cpp_fourier_mellin_result.peak:.4f})",
     )
 
-    # start = perf_counter()
-    # xyz_source, xyz_target, bgr_source, bgr_target = find_dense_correspondences(img_a, img_b, entry_a.intrinsics)
-    # end = perf_counter()
-    # print(f"Correspondence matching took {end - start:.4f} s")
+    start = perf_counter()
+    xyz_source, xyz_target, bgr_source, bgr_target = find_dense_correspondences(
+        entry_a.rgbd_frame, entry_b.rgbd_frame
+    )
+    end = perf_counter()
+    print(f"Correspondence matching took {end - start:.4f} s")
 
-    # start = perf_counter()
-    # T = estimate_pose(img_a, img_b, TUM_INTRINSICS)
-    # end = perf_counter()
-    # print(f"Pose estimation matching took {end - start:.4f}")
+    start = perf_counter()
+    T = estimate_pose(entry_a.rgbd_frame, entry_b.rgbd_frame)
+    end = perf_counter()
+    print(f"Pose estimation matching took {end - start:.4f}")
 
     plt.tight_layout()
     plt.show()

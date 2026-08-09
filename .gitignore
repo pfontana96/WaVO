@@ -219,3 +219,6 @@ __marimo__/
 
 
 data/
+
+# Conan-generated (per-machine) CMake presets
+CMakeUserPresets.json

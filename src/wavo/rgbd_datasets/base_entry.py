@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
-from wavo.image import RGBDImage
+from wavo._core.image import RGBDFrame
 
 
 class BaseRGBDEntry(BaseModel):
@@ -14,7 +14,7 @@ class BaseRGBDEntry(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    rgbd_image: RGBDImage
+    rgbd_frame: RGBDFrame
     rgb_stamp: float
     depth_stamp: float
 
