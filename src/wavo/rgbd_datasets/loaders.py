@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Iterator, List, Tuple, Sequence
+from time import perf_counter
 
 import cv2
 import numpy as np
@@ -127,9 +128,13 @@ class RGBDDatasetLoader:
 
     def __getitem__(self, i: int) -> TUMEntry:
         rgb_stamp, rgb_file, depth_stamp, depth_file = self._pairs[i]
-        return TUMEntry.load(
+        start = perf_counter()
+        entry = TUMEntry.load(
             self.root, rgb_stamp, rgb_file, depth_stamp, depth_file, self.depth_scale
         )
+        end = perf_counter()
+        # print(f"Entry creation took: {end - start:.4f} s")
+        return entry
 
     def __iter__(self) -> Iterator[TUMEntry]:
         for i in range(len(self)):

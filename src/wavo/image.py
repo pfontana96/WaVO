@@ -56,6 +56,11 @@ class CameraIntrinsics(BaseModel):
         return self
 
 
+def _radial_hann_window(shape: tuple[int, int]) -> np.ndarray:
+    n_theta, n_rho = shape
+    return np.tile(np.hanning(n_rho).astype(np.float32), (n_theta, 1))
+
+
 class _Frame:
 
     # object that stores everything that a frame needs for its registration
@@ -64,10 +69,23 @@ class _Frame:
         assert bgr.ndim == 3 and bgr.shape[2] == 3
         assert bgr.shape[:2] == depth.shape
 
+        # NOTE: HARDCODED UNDISTORTION
+        # cv2.undistort(
+        #     bgr,
+        #     cameraMatrix=np.array(
+        #         [
+        #             [520.9, 0.0, 325.1],
+        #             [0.0, 521.0, 249.7],
+        #             [0.0, 0.0, 1.0],
+        #         ]
+        #     ),
+        #     distCoeffs=np.array([0.2312, -0.7849, -0.0033, -0.0001, 0.9172]),
+        # )
+
         self._color = np.ascontiguousarray(bgr)
         self._depth = np.ascontiguousarray(depth)
 
-        self._gray = cv2.cvtColor(self._color, cv2.COLOR_BGR2GRAY)
+        self._gray = cv2.cvtColor(self._color, cv2.COLOR_BGR2GRAY).astype(np.float32)
         self._gray_zero_mean = self._gray - np.median(self._gray)
         self._shape = self._gray.shape
 
@@ -209,16 +227,25 @@ class _Frame:
 
         # # OpenCV flags for semi-log polar mapping
         flags = cv2.WARP_POLAR_LOG | cv2.INTER_LINEAR | cv2.WARP_FILL_OUTLIERS
-        logpolar = cv2.warpPolar(mag, (w, h), center, self._max_log_polar_radius, flags)
-        self._logpolar = logpolar - np.median(logpolar)
 
-        logpolar_window = cv2.createHanningWindow((w, h), cv2.CV_32F)
+        h_full = 2 * h  # oversample theta, then keep half
+        logpolar = cv2.warpPolar(
+            mag, (w, h_full), center, self._max_log_polar_radius, flags
+        )
+        logpolar = np.ascontiguousarray(logpolar[: h_full // 2])  # theta in [0, 180)
+
+        self._logpolar = logpolar - np.median(logpolar)
+        self._n_theta_rows = self._logpolar.shape[0]
+
+        # logpolar_window = cv2.createHanningWindow((w, h), cv2.CV_32F)
+        logpolar_window = _radial_hann_window(self._logpolar.shape)
+
         self._log_polar_dft = cv2.dft(
             self._logpolar * logpolar_window, flags=cv2.DFT_COMPLEX_OUTPUT
         )
 
     def get_log_polar(self) -> tuple[np.ndarray, float]:
-        return self._log_polar_dft, self._max_log_polar_radius
+        return self._log_polar_dft, self._max_log_polar_radius, self._n_theta_rows
 
     def plot(self):
         import matplotlib.pyplot as plt
@@ -247,7 +274,7 @@ class _Frame:
         axs[1, 2].imshow(phase, cmap="gray")
         axs[1, 2].set_title("shifted dft phase")
 
-        lp_re, lp_im = cv2.split(self._log_polar_dft)
+        lp_re, lp_im = cv2.split(np.fft.fftshift(self._log_polar_dft))
         lp_log_mag = np.log1p(cv2.magnitude(lp_re, lp_im))
         lp_phase = phase = cv2.phase(lp_re, lp_im)
 
