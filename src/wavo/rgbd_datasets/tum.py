@@ -2,13 +2,15 @@
 
 from pathlib import Path
 from typing import List, Sequence, Tuple
+from time import perf_counter
 
 import cv2
 import numpy as np
 
-from wavo.image import CameraIntrinsics, RGBDImage
 from wavo.rgbd_datasets.base_entry import BaseRGBDEntry
 from wavo.rgbd_datasets.loader import RGBDDatasetLoader
+
+from wavo._core.image import RGBDFrame, CameraIntrinsics
 
 
 class TUMRGBDDatasetLoader(RGBDDatasetLoader, fmt="tum"):
@@ -113,8 +115,20 @@ class TUMRGBDDatasetLoader(RGBDDatasetLoader, fmt="tum"):
             / self.depth_scale
         )
 
+        s = perf_counter()
+        rgbd_frame = RGBDFrame(
+            bgr=bgr,
+            depth=depth,
+            intrinsics=CameraIntrinsics(
+                K=self.intrinsics.K,
+                dist_coeffs=self.intrinsics.dist_coeffs,
+            ),
+        )
+        e = perf_counter()
+        # print(f"C++ creation took: {e-s:.4f} s")
+
         return BaseRGBDEntry(
-            rgbd_image=RGBDImage(bgr, depth, self.intrinsics),
+            rgbd_frame=rgbd_frame,
             rgb_stamp=rgb_stamp,
             depth_stamp=depth_stamp,
         )

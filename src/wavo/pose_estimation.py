@@ -3,20 +3,18 @@ import open3d as o3d
 import open3d.core as o3c
 import open3d.t.pipelines.registration as treg
 
-from wavo.image import RGBDImage, CameraIntrinsics
 from wavo.correspondences import find_dense_correspondences
+
+from wavo._core.image import RGBDFrame
 
 
 def estimate_pose(
-    source: RGBDImage,
-    target: RGBDImage,
-    intrinsics: CameraIntrinsics,
+    source: RGBDFrame,
+    target: RGBDFrame,
     init_guess: np.ndarray = np.eye(4, dtype=np.float32),
 ):
 
-    xyz_source, xyz_target, _, _ = find_dense_correspondences(
-        source, target, intrinsics, stride=4
-    )
+    xyz_source, xyz_target, _, _ = find_dense_correspondences(source, target, stride=4)
 
     pcd_source = o3d.t.geometry.PointCloud()
     pcd_source.point.positions = o3c.Tensor(xyz_source, dtype=o3c.float32)
