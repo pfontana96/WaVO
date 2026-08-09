@@ -69,19 +69,6 @@ class _Frame:
         assert bgr.ndim == 3 and bgr.shape[2] == 3
         assert bgr.shape[:2] == depth.shape
 
-        # NOTE: HARDCODED UNDISTORTION
-        # cv2.undistort(
-        #     bgr,
-        #     cameraMatrix=np.array(
-        #         [
-        #             [520.9, 0.0, 325.1],
-        #             [0.0, 521.0, 249.7],
-        #             [0.0, 0.0, 1.0],
-        #         ]
-        #     ),
-        #     distCoeffs=np.array([0.2312, -0.7849, -0.0033, -0.0001, 0.9172]),
-        # )
-
         self._color = np.ascontiguousarray(bgr)
         self._depth = np.ascontiguousarray(depth)
 
@@ -293,9 +280,49 @@ class _Frame:
 
 
 class RGBDImage:
+    """An RGB/depth pair, undistorted at construction with the given intrinsics.
 
-    def __init__(self, bgr: np.ndarray, depth: np.ndarray):
+    The stored pixels are rectified, so :attr:`intrinsics` exposes the same
+    camera matrix with zeroed distortion coefficients — use those for any
+    downstream (de)projection, not the raw ones.
+    """
+
+    def __init__(
+        self, bgr: np.ndarray, depth: np.ndarray, intrinsics: CameraIntrinsics
+    ):
+        bgr, depth = self._undistort(bgr, depth, intrinsics)
+        self._intrinsics = CameraIntrinsics(
+            K=intrinsics.K,
+            dist_coeffs=np.zeros(5, dtype=np.float32),
+            no_valid_point=intrinsics.no_valid_point,
+        )
         self._frame = _Frame(bgr=bgr, depth=depth)
+
+    @staticmethod
+    def _undistort(
+        bgr: np.ndarray, depth: np.ndarray, intrinsics: CameraIntrinsics
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if not intrinsics.dist_coeffs.any():
+            return bgr, depth
+
+        h, w = depth.shape
+        map_x, map_y = cv2.initUndistortRectifyMap(
+            intrinsics.K,
+            intrinsics.dist_coeffs,
+            None,
+            intrinsics.K,
+            (w, h),
+            cv2.CV_32FC1,
+        )
+        bgr = cv2.remap(bgr, map_x, map_y, cv2.INTER_LINEAR)
+        # nearest for depth: interpolating across depth discontinuities would
+        # invent geometry between foreground and background
+        depth = cv2.remap(depth, map_x, map_y, cv2.INTER_NEAREST)
+        return bgr, depth
+
+    @property
+    def intrinsics(self) -> CameraIntrinsics:
+        return self._intrinsics
 
     @property
     def frame(self) -> _Frame:

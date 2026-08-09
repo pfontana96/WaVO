@@ -78,7 +78,9 @@ def show_registration(imga, imgb, affine, title):
 
 if __name__ == "__main__":
 
-    dataset = RGBDDatasetLoader("data/rgbd_dataset_freiburg1_desk2")
+    dataset = RGBDDatasetLoader.load(
+        "tum", "data/rgbd_dataset_freiburg1_desk2", intrinsics=TUM_INTRINSICS
+    )
 
     # i = 15
     i = np.random.randint(50, 600)
@@ -121,7 +123,7 @@ if __name__ == "__main__":
     )
 
     # start = perf_counter()
-    # xyz_source, xyz_target, bgr_source, bgr_target = find_dense_correspondences(img_a, img_b, TUM_INTRINSICS)
+    # xyz_source, xyz_target, bgr_source, bgr_target = find_dense_correspondences(img_a, img_b, entry_a.intrinsics)
     # end = perf_counter()
     # print(f"Correspondence matching took {end - start:.4f} s")
 

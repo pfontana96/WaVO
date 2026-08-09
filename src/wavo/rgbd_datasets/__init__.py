@@ -1,4 +1,5 @@
 from .base_entry import BaseRGBDEntry
-from .loaders import RGBDDatasetLoader, TUMEntry
+from .loader import RGBDDatasetLoader
+from . import tum  # noqa: F401  (registers the "tum" format)
 
-__all__ = ["BaseRGBDEntry", "RGBDDatasetLoader", "TUMEntry"]
+__all__ = ["RGBDDatasetLoader"]

@@ -1,61 +1,37 @@
-"""Loaders for RGBD datasets."""
+"""Loader for TUM RGBD sequences (https://cvg.cit.tum.de/data/datasets/rgbd-dataset)."""
 
 from pathlib import Path
-from typing import Iterator, List, Tuple, Sequence
-from time import perf_counter
+from typing import List, Sequence, Tuple
 
 import cv2
 import numpy as np
 
-from .base_entry import BaseRGBDEntry
-from wavo.image import RGBDImage
+from wavo.image import CameraIntrinsics, RGBDImage
+from wavo.rgbd_datasets.base_entry import BaseRGBDEntry
+from wavo.rgbd_datasets.loader import RGBDDatasetLoader
 
 
-class TUMEntry(BaseRGBDEntry):
-    @classmethod
-    def load(
-        cls,
-        root: Path,
-        rgb_stamp: float,
-        rgb_file: str,
-        depth_stamp: float,
-        depth_file: str,
-        depth_scale: float = 5000.0,
-    ) -> "TUMEntry":
-
-        bgr = cv2.imread(str(root / rgb_file))
-        depth = (
-            cv2.imread(str(root / depth_file), cv2.IMREAD_UNCHANGED).astype(np.float32)
-            / depth_scale
-        )
-
-        image = RGBDImage(bgr, depth)
-
-        return cls(
-            rgbd_image=image,
-            rgb_stamp=rgb_stamp,
-            depth_stamp=depth_stamp,
-        )
-
-
-class RGBDDatasetLoader:
-    """Indexable/iterable loader for an RGBD dataset. Only TUM format for now.
+class TUMRGBDDatasetLoader(RGBDDatasetLoader, fmt="tum"):
+    """Loader for a TUM RGBD sequence.
 
     Pairs each rgb frame with the nearest depth frame in time (within
     ``max_stamp_diff`` seconds); unmatched rgb frames are skipped.
+
+    TUM sequences don't ship camera intrinsics, so a
+    :class:`~wavo.image.CameraIntrinsics` must be provided.
     """
 
     def __init__(
         self,
         root: Path,
-        fmt: str = "tum",
+        intrinsics: CameraIntrinsics,
         depth_scale: float = 5000.0,
         max_stamp_diff: float = 0.02,
         time_offset: float = 0.0,
     ):
-        if fmt != "tum":
-            raise ValueError(f"unsupported dataset format: {fmt!r}")
-        self.root = Path(root)
+        if intrinsics is None:
+            raise ValueError("TUM datasets don't ship intrinsics; provide them")
+        super().__init__(root, intrinsics)
         self.depth_scale = depth_scale
         rgb_index = self._read_index(self.root / "rgb.txt")
         depth_index = self._read_index(self.root / "depth.txt")
@@ -126,19 +102,22 @@ class RGBDDatasetLoader:
     def __len__(self) -> int:
         return len(self._pairs)
 
-    def __getitem__(self, i: int) -> TUMEntry:
+    def __getitem__(self, i: int) -> BaseRGBDEntry:
         rgb_stamp, rgb_file, depth_stamp, depth_file = self._pairs[i]
-        start = perf_counter()
-        entry = TUMEntry.load(
-            self.root, rgb_stamp, rgb_file, depth_stamp, depth_file, self.depth_scale
-        )
-        end = perf_counter()
-        # print(f"Entry creation took: {end - start:.4f} s")
-        return entry
 
-    def __iter__(self) -> Iterator[TUMEntry]:
-        for i in range(len(self)):
-            yield self[i]
+        bgr = cv2.imread(str(self.root / rgb_file))
+        depth = (
+            cv2.imread(str(self.root / depth_file), cv2.IMREAD_UNCHANGED).astype(
+                np.float32
+            )
+            / self.depth_scale
+        )
+
+        return BaseRGBDEntry(
+            rgbd_image=RGBDImage(bgr, depth, self.intrinsics),
+            rgb_stamp=rgb_stamp,
+            depth_stamp=depth_stamp,
+        )
 
     # -- diagnostics ------------------------------------------------------
 

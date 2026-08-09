@@ -1,17 +1,15 @@
-"""Abstract base entry for RGBD datasets."""
-
-from abc import ABC, abstractmethod
+"""Entry type for RGBD datasets."""
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from wavo.image import RGBDImage
 
 
-class BaseRGBDEntry(BaseModel, ABC):
+class BaseRGBDEntry(BaseModel):
     """A single RGBD dataset entry: an RGB/depth image pair with their timestamps.
 
-    Subclasses implement :meth:`load` with the dataset-specific reading logic
-    (file formats, depth scaling, timestamp parsing, ...).
+    Loaders build these in ``__getitem__`` with the dataset-specific reading
+    logic (file formats, depth scaling, timestamp parsing, ...).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -25,9 +23,3 @@ class BaseRGBDEntry(BaseModel, ABC):
     def stamp(self) -> float:
         """Average of the RGB and depth timestamps."""
         return 0.5 * (self.rgb_stamp + self.depth_stamp)
-
-    @classmethod
-    @abstractmethod
-    def load(cls, *args, **kwargs) -> "BaseRGBDEntry":
-        """Read a single entry from disk and return it as a model instance."""
-        raise NotImplementedError
