@@ -65,7 +65,7 @@ RegistrationResult ImageRegistrator::register_best(const RGBDFrame& source,
                                                    const RGBDFrame& target) {
   RegistrationResult pc = register_phase_correlation(source, target);
   RegistrationResult fm = register_fourier_mellin(source, target);
-  return fm.rmse < pc.rmse ? fm : pc;
+  return fm.ncc > pc.ncc ? fm : pc;
 }
 
 RegistrationResult ImageRegistrator::register_phase_correlation(const RGBDFrame& source,
