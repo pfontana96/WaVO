@@ -7,7 +7,7 @@ import open3d as o3d
 import open3d.core as o3c
 
 from wavo.rgbd_datasets import RGBDDatasetLoader, BaseRGBDEntry
-from wavo.correspondences import find_dense_correspondences, deproject
+from wavo.correspondences import find_dense_correspondences_3d
 from wavo.pose_estimation import estimate_pose
 
 from wavo._core.image import RGBDFrame, CameraIntrinsics
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     i = np.random.randint(50, 600)
 
     entry_a = dataset[i]
-    entry_b = dataset[i + 3]
+    entry_b = dataset[i + 8]
 
     print(f"Stamp difference: {entry_b.stamp - entry_a.stamp}")
 
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     )
 
     start = perf_counter()
-    xyz_source, xyz_target, bgr_source, bgr_target = find_dense_correspondences(
+    xyz_source, xyz_target, bgr_source, bgr_target = find_dense_correspondences_3d(
         entry_a.rgbd_frame, entry_b.rgbd_frame
     )
     end = perf_counter()

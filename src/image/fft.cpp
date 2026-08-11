@@ -17,7 +17,7 @@ cv::Mat fftshift(const cv::Mat& m) {
 
 cv::Mat compute_fft(const cv::Mat& img, const cv::Mat& window, bool shifted) {
   cv::Mat out;
-  cv::dft(img.mul(window), out, cv::DFT_COMPLEX_OUTPUT);
+  cv::dft(window.empty() ? img : img.mul(window), out, cv::DFT_COMPLEX_OUTPUT);
   return shifted ? fftshift(out) : out;
 }
 

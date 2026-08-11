@@ -65,14 +65,14 @@ RegistrationResult ImageRegistrator::register_best(const RGBDFrame& source,
                                                    const RGBDFrame& target) {
   RegistrationResult pc = register_phase_correlation(source, target);
   RegistrationResult fm = register_fourier_mellin(source, target);
-  return fm.ncc > pc.ncc ? fm : pc;
+  return fm.rmse < pc.rmse ? fm : pc;
 }
 
 RegistrationResult ImageRegistrator::register_phase_correlation(const RGBDFrame& source,
                                                                 const RGBDFrame& target) {
   CV_Assert(source.gray().size() == target.gray().size());
 
-  const cv::Mat corr = phase_correlation(source.dft(), target.dft());
+  const cv::Mat corr = phase_correlation(source.dft(), target.dft(), false);
   const Peak peak = extract_peak(corr);
 
   cv::Mat affine = (cv::Mat_<float>(2, 3) << 1.f, 0.f, peak.shift.x,  //
@@ -87,7 +87,8 @@ RegistrationResult ImageRegistrator::register_fourier_mellin(const RGBDFrame& so
   const cv::Size sq = source.square_size();
   const cv::Point2f center(sq.width / 2.f, sq.height / 2.f);
 
-  const Peak lp = extract_peak(phase_correlation(source.log_polar_dft(), target.log_polar_dft()));
+  const Peak lp =
+      extract_peak(phase_correlation(source.log_polar_dft(), target.log_polar_dft(), false));
 
   // Map log-polar pixel shifts back to physical rotation and scale.
   const double angle_step = 180.0 / source.n_theta_rows();
@@ -100,7 +101,7 @@ RegistrationResult ImageRegistrator::register_fourier_mellin(const RGBDFrame& so
         cv::getRotationMatrix2D(center, rotation_mod_180 + 180.0 * branch, scale);
     const cv::Mat target_rect_dft = target.rectified_square_dft(rot_mat, sq);
 
-    const Peak peak = extract_peak(phase_correlation(source.square_dft(), target_rect_dft));
+    const Peak peak = extract_peak(phase_correlation(source.square_dft(), target_rect_dft, false));
 
     cv::Mat affine;
     rot_mat.convertTo(affine, CV_32F);

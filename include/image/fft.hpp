@@ -9,7 +9,7 @@ namespace image {
 cv::Mat fftshift(const cv::Mat& m);
 
 /// DFT of img * window (CV_32FC2), optionally fftshifted.
-cv::Mat compute_fft(const cv::Mat& img, const cv::Mat& window, bool shifted = false);
+cv::Mat compute_fft(const cv::Mat& img, const cv::Mat& window = cv::Mat(), bool shifted = false);
 
 /// Correlation surface (fftshifted, CV_32F) between two CV_32FC2 spectra.
 /// With normalize, magnitudes are discarded first (true phase correlation);
