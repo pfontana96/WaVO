@@ -1,4 +1,5 @@
 #include <pybind11/numpy.h>
+#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -214,20 +215,30 @@ PYBIND11_MODULE(_core, m) {
   using wavo::image::ImageRegistrator;
   using wavo::image::RegistrationDebugData;
   using wavo::image::RegistrationResult;
+  using wavo::image::Score;
 
   py::class_<RegistrationDebugData, std::shared_ptr<RegistrationDebugData>>(
       reg, "RegistrationDebugData", "Correlation surfaces and raw peaks; see debug=True.")
       .def_readonly("correlation", &RegistrationDebugData::correlation)
       .def_readonly("peak", &RegistrationDebugData::peak);
 
+  py::class_<Score>(reg, "Score", "Registration quality; ordering compares rmse only.")
+      .def_readonly("rmse", &Score::rmse)
+      .def_readonly("overlap", &Score::overlap)
+      .def(py::self < py::self)
+      .def(py::self > py::self)
+      .def(py::self <= py::self)
+      .def(py::self >= py::self)
+      .def(py::self == py::self)
+      .def(py::self != py::self)
+      .def("__repr__", [](const Score& s) {
+        return "Score(rmse=" + std::to_string(s.rmse) + ", overlap=" + std::to_string(s.overlap) +
+               ")";
+      });
+
   py::class_<RegistrationResult>(reg, "RegistrationResult")
       .def_readonly("affine", &RegistrationResult::affine)
-      .def_readonly("rmse", &RegistrationResult::rmse)
-      .def_readonly("peak", &RegistrationResult::peak)
-      .def_readonly("ncc", &RegistrationResult::ncc)
-      .def_readonly("overlap", &RegistrationResult::overlap)
-      .def_readonly("branch", &RegistrationResult::branch)
-      .def_readonly("log_polar_peak", &RegistrationResult::log_polar_peak)
+      .def_readonly("score", &RegistrationResult::score)
       .def_readonly("debug", &RegistrationResult::debug)
       .def("inverse_affine", &RegistrationResult::inverse_affine);
 

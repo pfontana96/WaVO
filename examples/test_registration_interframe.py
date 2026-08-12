@@ -39,7 +39,7 @@ def plot_image_registration(
     nrows = 2 if result.debug is None else 3
 
     fig, axs = plt.subplots(nrows, 3)
-    fig.suptitle(f"{title} (RMSE: {result.rmse:.4f})")
+    fig.suptitle(f"{title} (RMSE: {result.score.rmse:.4f})")
 
     axs[0, 0].set_title("source frame")
     axs[0, 0].imshow(source.color)

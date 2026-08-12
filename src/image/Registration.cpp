@@ -11,14 +11,6 @@ namespace image {
 
 namespace {
 
-constexpr float kInf = std::numeric_limits<float>::infinity();
-
-struct Score {
-  float ncc = -kInf, rmse = kInf, overlap = 0.f;
-};
-
-/// ncc is -inf when the overlap is too small to trust, which stops a
-/// degenerate branch from winning by shrinking the valid region.
 Score score(const cv::Mat& source_gray, const cv::Mat& target_gray, const cv::Mat& affine,
             float min_overlap = 0.25f) {
   cv::Mat warped;
@@ -30,26 +22,18 @@ Score score(const cv::Mat& source_gray, const cv::Mat& target_gray, const cv::Ma
   s.overlap = static_cast<float>(cv::countNonZero(valid)) / static_cast<float>(valid.total());
   if (s.overlap < min_overlap) return s;
 
-  // Masked stats: rmse² = mean(d)² + std(d)², ncc = cov(a,b) / (std(a)·std(b)).
-  cv::Scalar ma, sa, mb, sb, md, sd;
-  cv::meanStdDev(source_gray, ma, sa, valid);
-  cv::meanStdDev(warped, mb, sb, valid);
+  // Masked stats: rmse² = mean(d)² + std(d)²
+  cv::Scalar md, sd;
   cv::meanStdDev(warped - source_gray, md, sd, valid);
   s.rmse = static_cast<float>(std::sqrt(md[0] * md[0] + sd[0] * sd[0]));
-  if (sa[0] < 1e-6 || sb[0] < 1e-6) return s;
 
-  const double mab = cv::mean(source_gray.mul(warped), valid)[0];
-  s.ncc = static_cast<float>((mab - ma[0] * mb[0]) / (sa[0] * sb[0]));
   return s;
 }
 
-RegistrationResult make_result(cv::Mat affine, const Score& s, float peak) {
+RegistrationResult make_result(cv::Mat affine, const Score& s) {
   RegistrationResult r;
   r.affine = std::move(affine);
-  r.rmse = s.rmse;
-  r.ncc = s.ncc;
-  r.overlap = s.overlap;
-  r.peak = peak;
+  r.score = s;
   return r;
 }
 
@@ -65,7 +49,7 @@ RegistrationResult ImageRegistrator::register_best(const RGBDFrame& source, cons
                                                    bool debug) {
   RegistrationResult pc = register_phase_correlation(source, target, debug);
   RegistrationResult fm = register_fourier_mellin(source, target, debug);
-  return fm.rmse < pc.rmse ? fm : pc;
+  return fm.score >= pc.score ? fm : pc;
 }
 
 RegistrationResult ImageRegistrator::register_phase_correlation(const RGBDFrame& source,
@@ -78,8 +62,7 @@ RegistrationResult ImageRegistrator::register_phase_correlation(const RGBDFrame&
 
   cv::Mat affine = (cv::Mat_<float>(2, 3) << 1.f, 0.f, peak.shift.x,  //
                     0.f, 1.f, peak.shift.y);
-  RegistrationResult r =
-      make_result(affine, score(source.gray(), target.gray(), affine), peak.value);
+  RegistrationResult r = make_result(affine, score(source.gray(), target.gray(), affine));
   if (debug) {
     r.debug = std::make_shared<RegistrationDebugData>();
     r.debug->correlation = corr;
@@ -127,10 +110,8 @@ RegistrationResult ImageRegistrator::register_fourier_mellin(const RGBDFrame& so
         affine.at<float>(1, 0) * off.x + affine.at<float>(1, 1) * off.y - off.y;
 
     const Score s = score(source.gray(), target.gray(), affine);
-    if (best.branch < 0 || s.ncc > best.ncc) {
-      best = make_result(affine, s, peak.value);
-      best.branch = branch;
-      best.log_polar_peak = lp.value;
+    if (branch == 0 || s > best.score) {
+      best = make_result(affine, s);
       if (dbg) {
         dbg->correlation = corr;
         dbg->peak = peak;

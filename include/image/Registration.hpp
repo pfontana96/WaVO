@@ -22,16 +22,23 @@ struct RegistrationDebugData {
   float overlap = 0.f;  ///< Fraction of jointly valid pixels.
 };
 
+constexpr float kInf = std::numeric_limits<float>::infinity();
+
+struct Score {
+  float rmse = kInf, overlap = 0.f;
+
+  // Ordering considers rmse only (overlap is ignored for now).
+  friend bool operator>(const Score& a, const Score& b) { return a.rmse < b.rmse; }
+  friend bool operator<(const Score& a, const Score& b) { return b > a; }
+  friend bool operator<=(const Score& a, const Score& b) { return !(a > b); }
+  friend bool operator>=(const Score& a, const Score& b) { return !(a < b); }
+  friend bool operator==(const Score& a, const Score& b) { return a.rmse == b.rmse; }
+  friend bool operator!=(const Score& a, const Score& b) { return !(a == b); }
+};
+
 struct RegistrationResult {
   cv::Mat affine;  ///< 2x3 CV_32F mapping target -> source pixels.
-  float rmse = std::numeric_limits<float>::infinity();
-
-  // Diagnostics.
-  float peak = 0.f;            ///< Translation correlation peak height.
-  float ncc = 0.f;             ///< Normalized cross-correlation over the overlap.
-  float overlap = 0.f;         ///< Fraction of jointly valid pixels.
-  int branch = -1;             ///< Fourier–Mellin 180° branch (-1: phase correlation).
-  float log_polar_peak = 0.f;  ///< Rotation/scale correlation peak height.
+  Score score;
 
   std::shared_ptr<RegistrationDebugData> debug;  ///< nullptr unless debug was requested.
 
