@@ -10,6 +10,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 # Everything ends up inside a Python extension module.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# Keep the conan-cache library dirs (libtbb.so.12 from the Open3D package) in
+# the installed extension's RUNPATH; CMake strips it on install otherwise and
+# _core then only imports if something else (e.g. the open3d wheel) already
+# loaded a libtbb into the process. Dev-build tradeoff: bakes absolute conan
+# paths into the .so, so a redistributable wheel would need bundling instead.
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 
 find_package(pybind11 CONFIG REQUIRED)
 # Provided by Conan (conanfile.txt) when building through pip, or by any

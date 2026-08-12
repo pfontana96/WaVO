@@ -2,9 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <stdexcept>
 #include <vector>
 
+#include <open3d/core/Tensor.h>
+#include <open3d/t/geometry/PointCloud.h>
+#include <open3d/t/pipelines/registration/TransformationEstimation.h>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -21,6 +25,16 @@ cv::Mat depth_as_float(const cv::Mat& depth) {
   cv::Mat d32;
   depth.convertTo(d32, CV_32F);
   return d32;
+}
+
+/// N x 3 CV_32F matrix as an Open3D point cloud (copies into a CPU tensor).
+open3d::t::geometry::PointCloud to_pointcloud(const cv::Mat& xyz) {
+  const cv::Mat m = xyz.isContinuous() ? xyz : xyz.clone();
+  open3d::core::Tensor positions({m.rows, 3}, open3d::core::Float32);
+  std::memcpy(positions.GetDataPtr(), m.ptr<float>(), m.total() * sizeof(float));
+  open3d::t::geometry::PointCloud pcd;
+  pcd.SetPointPositions(positions);
+  return pcd;
 }
 
 }  // namespace
@@ -121,6 +135,40 @@ DenseCorrespondences find_dense_correspondences_3d(const image::RGBDFrame& sourc
       deproject(cv::Mat(uv_target).reshape(1, n), cv::Mat(z_target, false), target.intrinsics());
   out.bgr_source = cv::Mat(bgr_source, true).reshape(1, n);
   out.bgr_target = cv::Mat(bgr_target, true).reshape(1, n);
+  return out;
+}
+
+cv::Mat estimate_pose(const image::RGBDFrame& source, const image::RGBDFrame& target,
+                      const cv::Mat& init_guess, int stride) {
+  namespace o3c = open3d::core;
+
+  const DenseCorrespondences c = find_dense_correspondences_3d(source, target, stride);
+  const int n = c.xyz_source.rows;
+  if (n < 3) throw std::runtime_error("estimate_pose: fewer than 3 valid 3D correspondences");
+
+  o3c::Tensor init = o3c::Tensor::Eye(4, o3c::Float32, o3c::Device("CPU:0"));
+  if (!init_guess.empty()) {
+    if (init_guess.rows != 4 || init_guess.cols != 4 || init_guess.channels() != 1)
+      throw std::invalid_argument("init_guess must be a 4x4 matrix");
+    cv::Mat g32;
+    init_guess.convertTo(g32, CV_32F);
+    std::memcpy(init.GetDataPtr(), g32.ptr<float>(), 16 * sizeof(float));
+  }
+
+  // Rows of xyz_source/xyz_target already pair up 1:1.
+  const o3c::Tensor correspondences = o3c::Tensor::Arange(0, n, 1, o3c::Int64);
+  const open3d::t::pipelines::registration::TransformationEstimationPointToPoint estimator;
+  // Despite its docs, ComputeTransformation returns the positions' dtype, so
+  // convert explicitly rather than assume.
+  const o3c::Tensor transform =
+      estimator
+          .ComputeTransformation(to_pointcloud(c.xyz_source), to_pointcloud(c.xyz_target),
+                                 correspondences, init)
+          .To(o3c::Device("CPU:0"), o3c::Float32)
+          .Contiguous();
+
+  cv::Mat out(4, 4, CV_32F);
+  std::memcpy(out.ptr<float>(), transform.GetDataPtr<float>(), 16 * sizeof(float));
   return out;
 }
 

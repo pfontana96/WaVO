@@ -31,5 +31,13 @@ DenseCorrespondences find_dense_correspondences_3d(const image::RGBDFrame& sourc
                                                    const image::RGBDFrame& target, int stride = 6,
                                                    float min_grad = 8.f);
 
+/// Rigid source -> target camera-frame pose from the dense 3D correspondences,
+/// solved closed-form by Open3D's point-to-point estimator (Umeyama). Returns
+/// the 4x4 CV_32F transform. `init_guess` is a 4x4 pose (empty = identity),
+/// forwarded to Open3D; the closed-form solution does not depend on it.
+/// Throws when fewer than 3 correspondences survive.
+cv::Mat estimate_pose(const image::RGBDFrame& source, const image::RGBDFrame& target,
+                      const cv::Mat& init_guess = cv::Mat(), int stride = 4);
+
 }  // namespace pointcloud
 }  // namespace wavo

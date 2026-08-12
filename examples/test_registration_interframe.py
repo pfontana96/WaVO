@@ -7,11 +7,11 @@ import open3d as o3d
 import open3d.core as o3c
 
 from wavo.rgbd_datasets import RGBDDatasetLoader
-from wavo.correspondences import find_dense_correspondences_3d
-from wavo.pose_estimation import estimate_pose
 
 from wavo._core.image import RGBDFrame, CameraIntrinsics
 from wavo._core.image.registration import ImageRegistrator, RegistrationResult
+
+from wavo._core.pointcloud import find_dense_correspondences_3d, estimate_pose
 
 TUM_INTRINSICS = CameraIntrinsics(
     K=np.array(
@@ -132,23 +132,23 @@ if __name__ == "__main__":
     plt.show()
 
     # Visualize xyz_source, xyz_target
-    # pcd_source = o3d.t.geometry.PointCloud()
-    # pcd_source.point.positions = o3c.Tensor(xyz_source.reshape(-1, 3))
-    # pcd_source.point.colors = o3c.Tensor(bgr_source.reshape(-1, 3))
+    pcd_source = o3d.t.geometry.PointCloud()
+    pcd_source.point.positions = o3c.Tensor(xyz_source.reshape(-1, 3))
+    pcd_source.point.colors = o3c.Tensor(bgr_source.reshape(-1, 3))
 
-    # pcd_source_transformed = pcd_source.clone()
+    pcd_source_transformed = pcd_source.clone()
 
-    # pcd_source_transformed.transform(T)
+    pcd_source_transformed.transform(T)
 
-    # pcd_target = o3d.t.geometry.PointCloud()
-    # pcd_target.point.positions = o3c.Tensor(xyz_target.reshape(-1, 3))
-    # pcd_target.point.colors = o3c.Tensor(bgr_target.reshape(-1, 3))
+    pcd_target = o3d.t.geometry.PointCloud()
+    pcd_target.point.positions = o3c.Tensor(xyz_target.reshape(-1, 3))
+    pcd_target.point.colors = o3c.Tensor(bgr_target.reshape(-1, 3))
 
-    # o3d.visualization.draw(
-    #     [
-    #         {"name": "source", "geometry": pcd_source},
-    #         {"name": "source_transformed", "geometry": pcd_source_transformed},
-    #         {"name": "target", "geometry": pcd_target},
-    #     ],
-    #     show_ui=True,
-    # )
+    o3d.visualization.draw(
+        [
+            {"name": "source", "geometry": pcd_source},
+            {"name": "source_transformed", "geometry": pcd_source_transformed},
+            {"name": "target", "geometry": pcd_target},
+        ],
+        show_ui=True,
+    )

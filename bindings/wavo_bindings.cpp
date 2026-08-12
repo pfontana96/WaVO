@@ -279,6 +279,11 @@ PYBIND11_MODULE(_core, m) {
       "stride-spaced grid of textured source pixels after registering the\n"
       "frames, keeping points with valid depth in both.");
 
+  pointcloud.def("estimate_pose", &wavo::pointcloud::estimate_pose, py::arg("source"),
+                 py::arg("target"), py::arg("init_guess") = cv::Mat(), py::arg("stride") = 4,
+                 "Rigid 4x4 source -> target pose from the dense 3D correspondences\n"
+                 "(closed-form point-to-point Umeyama via Open3D).");
+
 #ifdef WAVO_VERSION_INFO
   m.attr("__version__") = WAVO_VERSION_INFO;
 #else
