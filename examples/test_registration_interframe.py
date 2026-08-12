@@ -6,12 +6,12 @@ import numpy as np
 import open3d as o3d
 import open3d.core as o3c
 
-from wavo.rgbd_datasets import RGBDDatasetLoader, BaseRGBDEntry
-from wavo.correspondences import find_dense_correspondences, deproject
-from wavo.pose_estimation import estimate_pose
+from wavo.rgbd_datasets import RGBDDatasetLoader
 
 from wavo._core.image import RGBDFrame, CameraIntrinsics
-from wavo._core.image.registration import ImageRegistrator
+from wavo._core.image.registration import ImageRegistrator, RegistrationResult
+
+from wavo._core.pointcloud import find_dense_correspondences_3d, estimate_pose
 
 TUM_INTRINSICS = CameraIntrinsics(
     K=np.array(
@@ -25,98 +25,56 @@ TUM_INTRINSICS = CameraIntrinsics(
 )
 
 
-def plot(frame: RGBDFrame):
+def plot_image_registration(
+    source: RGBDFrame,
+    target: RGBDFrame,
+    result: RegistrationResult,
+    title: str,
+):
 
-    _, axs = plt.subplots(3, 3, figsize=(12, 12))
+    warped_target = cv2.warpAffine(
+        target.color, result.affine, (target.shape[1], target.shape[0])
+    )
 
-    re, im = cv2.split(frame.shifted_dft)
-    log_mag = np.log1p(cv2.magnitude(re, im))
-    phase = cv2.phase(re, im)
+    nrows = 2 if result.debug is None else 3
 
-    axs[0, 0].imshow(cv2.cvtColor(frame.color, cv2.COLOR_BGR2RGB))
-    axs[0, 0].set_title("color")
+    fig, axs = plt.subplots(nrows, 3)
+    fig.suptitle(f"{title} (RMSE: {result.rmse:.4f})")
 
-    axs[0, 1].imshow(frame.gray, cmap="gray")
-    axs[0, 1].set_title("gray")
+    axs[0, 0].set_title("source frame")
+    axs[0, 0].imshow(source.color)
 
-    axs[0, 2].imshow(frame.gray_zero_mean, cmap="gray")
-    axs[0, 2].set_title("gray zero-mean")
+    axs[0, 1].set_title("target frame")
+    axs[0, 1].imshow(target.color)
 
-    axs[1, 1].imshow(log_mag, cmap="gray")
-    axs[1, 1].set_title("shifted dft log magnitude")
+    axs[0, 2].set_title("warped target")
+    axs[0, 2].imshow(warped_target)
 
-    axs[1, 2].imshow(phase, cmap="gray")
-    axs[1, 2].set_title("shifted dft phase")
+    if result.debug is not None:
 
-    axs[1, 0].axis("off")
+        for i, (name, frame) in enumerate(zip(("source", "target"), (source, target))):
 
-    lp_re, lp_im = cv2.split(np.fft.fftshift(frame.log_polar_dft))
-    lp_log_mag = np.log1p(cv2.magnitude(lp_re, lp_im))
-    lp_phase = phase = cv2.phase(lp_re, lp_im)
+            re, im = cv2.split(frame.shifted_dft)
+            mag = cv2.magnitude(re, im)
+            logmag = cv2.log(mag, mag) + 1.0
 
-    axs[2, 0].imshow(lp_log_mag, cmap="gray")
-    axs[2, 0].set_title("log-polar dft log magnitude")
+            axs[1, i].set_title(f"{name} shifted DFT log-mag")
+            axs[1, i].imshow(logmag, cmap="viridis")
 
-    axs[2, 1].imshow(lp_phase, cmap="gray")
-    axs[2, 1].set_title("log-polar dft phase")
+        axs[1, 2].set_title("correlation")
+        axs[1, 2].imshow(result.debug.correlation, cmap="RdBu_r")
 
-    axs[2, 2].axis("off")
+    axs[nrows - 1, 0].set_axis_off()
+    axs[nrows - 1, 2].set_axis_off()
 
-    for ax in axs.flat:
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-
-def show_entries(source_entry: BaseRGBDEntry, target_entry: BaseRGBDEntry):
-
-    fig, axs = plt.subplots(2, 2)
-
-    for i, (entry, name) in enumerate(
-        zip((source_entry, target_entry), ("source", "target"))
-    ):
-        axs[i, 0].set_title(f"{name} ({entry.rgb_stamp:.3f} s) frame color image")
-        axs[i, 0].imshow(entry.rgbd_image.frame.color)
-
-        axs[i, 1].set_title(f"{name} ({entry.depth_stamp:.3f} s) frame depth image")
-        axs[i, 1].imshow(entry.rgbd_image.frame.depth, cmap="viridis")
-
-
-def show_image_fft(img: np.ndarray, shifted_dft: np.ndarray):
-
-    magnitude = cv2.magnitude(shifted_dft[:, :, 0], shifted_dft[:, :, 1])
-    log_magnitude = np.log1p(magnitude)
-    phase = cv2.phase(shifted_dft[:, :, 0], shifted_dft[:, :, 1])
-
-    _, axes = plt.subplots(1, 4, figsize=(16, 4))
-    for ax, data, title in zip(
-        axes,
-        (img, magnitude, log_magnitude, phase),
-        ("Image", "Magnitude", "Log magnitude", "Phase"),
-    ):
-        ax.imshow(data, cmap="gray")
-        ax.set_title(title)
-        ax.axis("off")
-
-
-def show_registration(imga, imgb, affine, title):
-
-    warped_b = cv2.warpAffine(imgb, affine, (imgb.shape[1], imgb.shape[0]))
-    diff = warped_b.astype(np.int16) - imga.astype(np.int16)
-
-    valid = (warped_b != 0) & (imga != 0)
-    rmse = np.sqrt(np.mean(diff[valid].astype(np.float64) ** 2))
-    ncc = np.corrcoef(imga[valid], warped_b[valid])[0, 1]
-
-    fig, axs = plt.subplots(1, 3, figsize=(6, 5))
-
-    fig.suptitle(f"{title} (residual  RMSE {rmse:.1f}  NCC {ncc:.4f})")
-
-    axs[0].imshow(imga, cmap="gray")
-    axs[1].imshow(warped_b, cmap="gray")
-
-    im = axs[2].imshow(np.where(valid, diff, 0), cmap="coolwarm", vmin=-40, vmax=40)
-
-    fig.colorbar(im, ax=axs[2])
+    axs[nrows - 1, 1].set_title("warped_target - source difference")
+    warped_target_gray = cv2.warpAffine(
+        target.gray, result.affine, (target.shape[1], target.shape[0])
+    )
+    valid = warped_target_gray != 0
+    diff = np.zeros(source.gray.shape, dtype=np.float32)
+    diff[valid] = source.gray[valid] - warped_target_gray[valid]
+    axs[nrows - 1, 1].imshow(diff, cmap="coolwarm")
 
 
 if __name__ == "__main__":
@@ -129,43 +87,37 @@ if __name__ == "__main__":
     i = np.random.randint(50, 600)
 
     entry_a = dataset[i]
-    entry_b = dataset[i + 3]
+    entry_b = dataset[i + 8]
+
+    frame_a = entry_a.rgbd_frame
+    frame_b = entry_b.rgbd_frame
 
     print(f"Stamp difference: {entry_b.stamp - entry_a.stamp}")
 
-    # show_entries(entry_a, entry_b)
-    plot(entry_a.rgbd_frame)
-
     start = perf_counter()
     cpp_phase_corr_result = ImageRegistrator.register_phase_correlation(
-        entry_a.rgbd_frame, entry_b.rgbd_frame
+        entry_a.rgbd_frame, entry_b.rgbd_frame, debug=True
     )
     end = perf_counter()
-    print(f"C++ phase correlation registration took {end - start:.4f} s")
+    print(f"Cross correlation registration took {end - start:.4f} s")
 
-    show_registration(
-        entry_a.rgbd_frame.gray,
-        entry_b.rgbd_frame.gray,
-        cpp_phase_corr_result.affine,
-        f"C++ Phase Correlation (peak: {cpp_phase_corr_result.peak:.4f})",
+    plot_image_registration(
+        frame_a, frame_b, cpp_phase_corr_result, "Cross-Correlation registration"
     )
 
     start = perf_counter()
     cpp_fourier_mellin_result = ImageRegistrator.register_fourier_mellin(
-        entry_a.rgbd_frame, entry_b.rgbd_frame
+        entry_a.rgbd_frame, entry_b.rgbd_frame, debug=True
     )
     end = perf_counter()
-    print(f"C++ Fourier-Mellin registration took {end - start:.4f} s")
+    print(f"Fourier-Mellin registration took {end - start:.4f} s")
 
-    show_registration(
-        entry_a.rgbd_frame.gray,
-        entry_b.rgbd_frame.gray,
-        cpp_fourier_mellin_result.affine,
-        f"Fourier-Mellin (peak: {cpp_fourier_mellin_result.peak:.4f})",
+    plot_image_registration(
+        frame_a, frame_b, cpp_fourier_mellin_result, "Fourier-Mellin registration"
     )
 
     start = perf_counter()
-    xyz_source, xyz_target, bgr_source, bgr_target = find_dense_correspondences(
+    xyz_source, xyz_target, bgr_source, bgr_target = find_dense_correspondences_3d(
         entry_a.rgbd_frame, entry_b.rgbd_frame
     )
     end = perf_counter()
@@ -180,23 +132,23 @@ if __name__ == "__main__":
     plt.show()
 
     # Visualize xyz_source, xyz_target
-    # pcd_source = o3d.t.geometry.PointCloud()
-    # pcd_source.point.positions = o3c.Tensor(xyz_source.reshape(-1, 3))
-    # pcd_source.point.colors = o3c.Tensor(bgr_source.reshape(-1, 3))
+    pcd_source = o3d.t.geometry.PointCloud()
+    pcd_source.point.positions = o3c.Tensor(xyz_source.reshape(-1, 3))
+    pcd_source.point.colors = o3c.Tensor(bgr_source.reshape(-1, 3))
 
-    # pcd_source_transformed = pcd_source.clone()
+    pcd_source_transformed = pcd_source.clone()
 
-    # pcd_source_transformed.transform(T)
+    pcd_source_transformed.transform(T)
 
-    # pcd_target = o3d.t.geometry.PointCloud()
-    # pcd_target.point.positions = o3c.Tensor(xyz_target.reshape(-1, 3))
-    # pcd_target.point.colors = o3c.Tensor(bgr_target.reshape(-1, 3))
+    pcd_target = o3d.t.geometry.PointCloud()
+    pcd_target.point.positions = o3c.Tensor(xyz_target.reshape(-1, 3))
+    pcd_target.point.colors = o3c.Tensor(bgr_target.reshape(-1, 3))
 
-    # o3d.visualization.draw(
-    #     [
-    #         {"name": "source", "geometry": pcd_source},
-    #         {"name": "source_transformed", "geometry": pcd_source_transformed},
-    #         {"name": "target", "geometry": pcd_target},
-    #     ],
-    #     show_ui=True,
-    # )
+    o3d.visualization.draw(
+        [
+            {"name": "source", "geometry": pcd_source},
+            {"name": "source_transformed", "geometry": pcd_source_transformed},
+            {"name": "target", "geometry": pcd_target},
+        ],
+        show_ui=True,
+    )

@@ -46,6 +46,13 @@ dev = [
 [tool.scikit-build-core-conan]
 output-folder = "build/conan"
 
+# In-repo recipes exported to the Conan cache before `conan install`
+# (Open3D has no Conan Center package).
+[[tool.scikit-build-core-conan.local-recipes]]
+path = "conan/open3d"
+name = "open3d"
+version = "0.19.0"
+
 [tool.scikit-build]
 build-dir = "build/{wheel_tag}"
 wheel.packages = ["src/wavo"]

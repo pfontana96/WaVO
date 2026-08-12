@@ -27,16 +27,20 @@ built with [scikit-build-core](https://github.com/scikit-build/scikit-build-core
 Requires Python ≥ 3.9 and a C++17 compiler. CMake and pybind11 are pulled in
 automatically by the build backend.
 
-Native dependencies (currently OpenCV core + imgproc, see
+Native dependencies (currently OpenCV and Open3D, see
 [conanfile.txt](conanfile.txt)) are resolved with [Conan](https://conan.io)
 by the [scikit-build-core-conan](https://github.com/wu-vincent/scikit-build-core-conan)
-build backend — no manual Conan setup is needed. The first build compiles a
-minimal static OpenCV (a few minutes); it is cached in `~/.conan2`, so later
-builds are fast.
+build backend — no manual Conan setup is needed. Open3D is not on Conan
+Center, so it builds from the in-repo recipe in [conan/open3d/](conan/open3d/)
+(exported to the Conan cache automatically). The first build compiles a
+minimal static OpenCV and Open3D (tens of minutes); both are cached in
+`~/.conan2`, so later builds are fast.
 
-To consume the C++ library directly (without Python), use the same conanfile:
+To consume the C++ library directly (without Python), use the same conanfile
+(the `conan export` mirrors what the pip backend does automatically):
 
 ```sh
+conan export conan/open3d --version 0.19.0
 conan install . --build=missing -s build_type=Release
 cmake --preset conan-release
 cmake --build --preset conan-release

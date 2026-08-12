@@ -48,7 +48,7 @@ cv::Mat log_magnitude(const cv::Mat& complex_dft) {
   cv::Mat planes[2], mag;
   cv::split(complex_dft, planes);
   cv::magnitude(planes[0], planes[1], mag);
-  mag += 1.f;
+  mag += 1.f;  // keeps the log finite and non-negative
   cv::log(mag, mag);
   return mag;
 }

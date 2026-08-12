@@ -1,5 +1,6 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include <algorithm>
 #include <cstring>
@@ -12,6 +13,7 @@
 #include "image/RGBDFrame.hpp"
 #include "image/Registration.hpp"
 #include "image/fft.hpp"
+#include "pointcloud/utils.hpp"
 
 namespace py = pybind11;
 
@@ -187,12 +189,17 @@ PYBIND11_MODULE(_core, m) {
   py::module fft = image.def_submodule("fft", "Spectra and phase correlation");
   fft.def("fftshift", &wavo::image::fftshift, py::arg("m"),
           "np.fft.fftshift over the two spatial axes.");
-  fft.def("compute_fft", &wavo::image::compute_fft, py::arg("img"), py::arg("window"),
+  fft.def("compute_fft", &wavo::image::compute_fft, py::arg("img"), py::arg("window") = cv::Mat(),
           py::arg("shifted") = false, "DFT of img * window as an (H, W, 2) array.");
   fft.def("phase_correlation", &wavo::image::phase_correlation, py::arg("src_dft"),
           py::arg("target_dft"), py::arg("normalize") = true, py::arg("eps_rel") = 1e-3f,
           "Correlation surface (fftshifted) between two spectra; eps_rel\n"
           "regularizes the whitening against noise-dominated bins.");
+  py::class_<wavo::image::Peak>(fft, "Peak", "Correlation peak (height + subpixel shift).")
+      .def_readonly("value", &wavo::image::Peak::value)
+      .def_property_readonly(
+          "shift", [](const wavo::image::Peak& p) { return py::make_tuple(p.shift.x, p.shift.y); },
+          "(dx, dy) relative to the surface center.");
   fft.def(
       "extract_peak",
       [](const cv::Mat& correlation, bool subpixel) {
@@ -205,7 +212,13 @@ PYBIND11_MODULE(_core, m) {
   py::module reg = image.def_submodule("registration", "Frame-to-frame registration");
 
   using wavo::image::ImageRegistrator;
+  using wavo::image::RegistrationDebugData;
   using wavo::image::RegistrationResult;
+
+  py::class_<RegistrationDebugData, std::shared_ptr<RegistrationDebugData>>(
+      reg, "RegistrationDebugData", "Correlation surfaces and raw peaks; see debug=True.")
+      .def_readonly("correlation", &RegistrationDebugData::correlation)
+      .def_readonly("peak", &RegistrationDebugData::peak);
 
   py::class_<RegistrationResult>(reg, "RegistrationResult")
       .def_readonly("affine", &RegistrationResult::affine)
@@ -215,15 +228,61 @@ PYBIND11_MODULE(_core, m) {
       .def_readonly("overlap", &RegistrationResult::overlap)
       .def_readonly("branch", &RegistrationResult::branch)
       .def_readonly("log_polar_peak", &RegistrationResult::log_polar_peak)
+      .def_readonly("debug", &RegistrationResult::debug)
       .def("inverse_affine", &RegistrationResult::inverse_affine);
 
   py::class_<ImageRegistrator>(reg, "ImageRegistrator")
       .def_static("register_best", &ImageRegistrator::register_best, py::arg("source"),
-                  py::arg("target"))
+                  py::arg("target"), py::arg("debug") = false)
       .def_static("register_phase_correlation", &ImageRegistrator::register_phase_correlation,
-                  py::arg("source"), py::arg("target"))
+                  py::arg("source"), py::arg("target"), py::arg("debug") = false)
       .def_static("register_fourier_mellin", &ImageRegistrator::register_fourier_mellin,
-                  py::arg("source"), py::arg("target"));
+                  py::arg("source"), py::arg("target"), py::arg("debug") = false);
+
+  py::module pointcloud = m.def_submodule("pointcloud", "Point-cloud utilities");
+
+  // forcecast instead of the cv::Mat caster: pixel coords commonly arrive as
+  // integer grids (e.g. np.mgrid -> int64), which the Mat caster rejects.
+  pointcloud.def(
+      "deproject",
+      [](py::array_t<float, py::array::c_style | py::array::forcecast> uv_points,
+         py::array_t<float, py::array::c_style | py::array::forcecast> z,
+         const CameraIntrinsics& intrinsics) {
+        if (uv_points.ndim() != 2) throw std::invalid_argument("uv_points must be (N, 2)");
+        if (z.ndim() != 1 || z.shape(0) != uv_points.shape(0))
+          throw std::invalid_argument("z must be 1-D with one depth per uv point");
+        const cv::Mat uv(static_cast<int>(uv_points.shape(0)), static_cast<int>(uv_points.shape(1)),
+                         CV_32F, const_cast<float*>(uv_points.data()));
+        const cv::Mat zm(static_cast<int>(z.shape(0)), 1, CV_32F, const_cast<float*>(z.data()));
+        return wavo::pointcloud::deproject(uv, zm, intrinsics);
+      },
+      py::arg("uv_points"), py::arg("z"), py::arg("intrinsics"),
+      "Back-project (N, 2) pixel coords with N depths into (N, 3)\n"
+      "camera-frame points, undistorting through the intrinsics.");
+
+  pointcloud.def(
+      "find_dense_correspondences_3d",
+      [](const RGBDFrame& source, const RGBDFrame& target, int stride,
+         float min_grad) -> py::tuple {
+        const wavo::pointcloud::DenseCorrespondences c =
+            wavo::pointcloud::find_dense_correspondences_3d(source, target, stride, min_grad);
+        // The Mat caster maps empty Mats to None; keep the (0, 3) shape instead.
+        if (c.xyz_source.empty()) {
+          const std::vector<py::ssize_t> shape{0, 3};
+          return py::make_tuple(py::array_t<float>(shape), py::array_t<float>(shape),
+                                py::array_t<uint8_t>(shape), py::array_t<uint8_t>(shape));
+        }
+        return py::make_tuple(c.xyz_source, c.xyz_target, c.bgr_source, c.bgr_target);
+      },
+      py::arg("source"), py::arg("target"), py::arg("stride") = 6, py::arg("min_grad") = 8.f,
+      "(xyz_source, xyz_target, bgr_source, bgr_target) sampled on a\n"
+      "stride-spaced grid of textured source pixels after registering the\n"
+      "frames, keeping points with valid depth in both.");
+
+  pointcloud.def("estimate_pose", &wavo::pointcloud::estimate_pose, py::arg("source"),
+                 py::arg("target"), py::arg("init_guess") = cv::Mat(), py::arg("stride") = 4,
+                 "Rigid 4x4 source -> target pose from the dense 3D correspondences\n"
+                 "(closed-form point-to-point Umeyama via Open3D).");
 
 #ifdef WAVO_VERSION_INFO
   m.attr("__version__") = WAVO_VERSION_INFO;
