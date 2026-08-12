@@ -1,5 +1,6 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include <algorithm>
 #include <cstring>
@@ -194,6 +195,11 @@ PYBIND11_MODULE(_core, m) {
           py::arg("target_dft"), py::arg("normalize") = true, py::arg("eps_rel") = 1e-3f,
           "Correlation surface (fftshifted) between two spectra; eps_rel\n"
           "regularizes the whitening against noise-dominated bins.");
+  py::class_<wavo::image::Peak>(fft, "Peak", "Correlation peak (height + subpixel shift).")
+      .def_readonly("value", &wavo::image::Peak::value)
+      .def_property_readonly(
+          "shift", [](const wavo::image::Peak& p) { return py::make_tuple(p.shift.x, p.shift.y); },
+          "(dx, dy) relative to the surface center.");
   fft.def(
       "extract_peak",
       [](const cv::Mat& correlation, bool subpixel) {
@@ -206,7 +212,13 @@ PYBIND11_MODULE(_core, m) {
   py::module reg = image.def_submodule("registration", "Frame-to-frame registration");
 
   using wavo::image::ImageRegistrator;
+  using wavo::image::RegistrationDebugData;
   using wavo::image::RegistrationResult;
+
+  py::class_<RegistrationDebugData, std::shared_ptr<RegistrationDebugData>>(
+      reg, "RegistrationDebugData", "Correlation surfaces and raw peaks; see debug=True.")
+      .def_readonly("correlation", &RegistrationDebugData::correlation)
+      .def_readonly("peak", &RegistrationDebugData::peak);
 
   py::class_<RegistrationResult>(reg, "RegistrationResult")
       .def_readonly("affine", &RegistrationResult::affine)
@@ -216,15 +228,16 @@ PYBIND11_MODULE(_core, m) {
       .def_readonly("overlap", &RegistrationResult::overlap)
       .def_readonly("branch", &RegistrationResult::branch)
       .def_readonly("log_polar_peak", &RegistrationResult::log_polar_peak)
+      .def_readonly("debug", &RegistrationResult::debug)
       .def("inverse_affine", &RegistrationResult::inverse_affine);
 
   py::class_<ImageRegistrator>(reg, "ImageRegistrator")
       .def_static("register_best", &ImageRegistrator::register_best, py::arg("source"),
-                  py::arg("target"))
+                  py::arg("target"), py::arg("debug") = false)
       .def_static("register_phase_correlation", &ImageRegistrator::register_phase_correlation,
-                  py::arg("source"), py::arg("target"))
+                  py::arg("source"), py::arg("target"), py::arg("debug") = false)
       .def_static("register_fourier_mellin", &ImageRegistrator::register_fourier_mellin,
-                  py::arg("source"), py::arg("target"));
+                  py::arg("source"), py::arg("target"), py::arg("debug") = false);
 
   py::module pointcloud = m.def_submodule("pointcloud", "Point-cloud utilities");
 
