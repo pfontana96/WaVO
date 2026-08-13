@@ -89,11 +89,37 @@ RGBDFrame::RGBDFrame(const cv::Mat& bgr, const cv::Mat& depth, const CameraIntri
   cv::cvtColor(color_, gray_, cv::COLOR_BGR2GRAY);
   gray_.convertTo(gray_, CV_32F);
   gray_zero_mean_ = gray_ - median_of_u8_values(gray_);
+  rect_window_ = window_->rectangular(gray_.size());
 
-  dft_ = compute_fft(gray_zero_mean_, window_->rectangular(gray_.size()));
-  shifted_dft_ = fftshift(dft_);
+  prepare_square_geometry();
+}
 
-  compute_log_polar();
+void RGBDFrame::prepare_square_geometry() {
+  int n = std::max(gray_.rows, gray_.cols);
+  n += n % 2;
+  square_gray_zero_mean_ = pad_square(gray_zero_mean_, n, &square_pad_offset_);
+  square_window_ = pad_square(rect_window_, n);
+  max_log_polar_radius_ = 0.7f * n / 2.f;
+  radial_window_ = window_->radial(cv::Size(n, n));
+}
+
+void RGBDFrame::compute_dfts(cv::Mat& dft, cv::Mat& square_dft, cv::Mat& logpolar_dft) const {
+  dft = compute_fft(gray_zero_mean_, rect_window_);
+
+  square_dft = compute_fft(square_gray_zero_mean_, square_window_);
+  const cv::Mat mag = log_magnitude(fftshift(square_dft));
+
+  const int n = square_gray_zero_mean_.rows;
+  const cv::Point2f center(static_cast<float>(n / 2), static_cast<float>(n / 2));
+
+  // Semi-log polar mapping: oversample theta 2x, then keep [0, 180).
+  const int flags = cv::WARP_POLAR_LOG + cv::INTER_LINEAR + cv::WARP_FILL_OUTLIERS;
+  cv::Mat logpolar;
+  cv::warpPolar(mag, logpolar, cv::Size(n, 2 * n), center, max_log_polar_radius_, flags);
+  logpolar = logpolar.rowRange(0, n).clone();
+  logpolar -= median(logpolar);
+
+  logpolar_dft = compute_fft(logpolar, radial_window_);
 }
 
 RGBDFrame RGBDFrame::affine_transform(const cv::Mat& rot_mat, cv::Size dsize) const {
@@ -103,35 +129,6 @@ RGBDFrame RGBDFrame::affine_transform(const cv::Mat& rot_mat, cv::Size dsize) co
   cv::warpAffine(depth_, warped_depth, rot_mat, dsize, cv::INTER_NEAREST, cv::BORDER_CONSTANT,
                  cv::Scalar::all(0));
   return {warped_bgr, warped_depth, intrinsics_};
-}
-
-cv::Mat RGBDFrame::rectified_square_dft(const cv::Mat& rot_mat, cv::Size dsize) const {
-  cv::Mat warped;
-  cv::warpAffine(square_gray_zero_mean_, warped, rot_mat, dsize, cv::INTER_LINEAR,
-                 cv::BORDER_CONSTANT, cv::Scalar::all(0));
-  return compute_fft(warped, square_window_);
-}
-
-void RGBDFrame::compute_log_polar() {
-  int n = std::max(gray_.rows, gray_.cols);
-  n += n % 2;
-  square_gray_zero_mean_ = pad_square(gray_zero_mean_, n, &square_pad_offset_);
-  square_window_ = pad_square(window_->rectangular(gray_.size()), n);
-
-  square_dft_ = compute_fft(square_gray_zero_mean_, square_window_);
-  const cv::Mat mag = log_magnitude(fftshift(square_dft_));
-
-  const cv::Point2f center(static_cast<float>(n / 2), static_cast<float>(n / 2));
-  max_log_polar_radius_ = 0.7f * n / 2.f;
-
-  // Semi-log polar mapping: oversample theta 2x, then keep [0, 180).
-  const int flags = cv::WARP_POLAR_LOG + cv::INTER_LINEAR + cv::WARP_FILL_OUTLIERS;
-  cv::Mat logpolar;
-  cv::warpPolar(mag, logpolar, cv::Size(n, 2 * n), center, max_log_polar_radius_, flags);
-  logpolar = logpolar.rowRange(0, n).clone();
-  logpolar_ = logpolar - median(logpolar);
-
-  log_polar_dft_ = compute_fft(logpolar_, window_->radial(logpolar_.size()));
 }
 
 }  // namespace image

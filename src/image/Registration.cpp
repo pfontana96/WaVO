@@ -37,27 +37,22 @@ RegistrationResult make_result(cv::Mat affine, const Score& s) {
   return r;
 }
 
-}  // namespace
+struct Spectra {
+  cv::Mat dft, square_dft, logpolar_dft;
+};
 
-cv::Mat RegistrationResult::inverse_affine() const {
-  cv::Mat inv;
-  cv::invertAffineTransform(affine, inv);
-  return inv;
+Spectra compute_spectra(const RGBDFrame& frame) {
+  Spectra s;
+  frame.compute_dfts(s.dft, s.square_dft, s.logpolar_dft);
+  return s;
 }
 
-RegistrationResult ImageRegistrator::register_best(const RGBDFrame& source, const RGBDFrame& target,
-                                                   bool debug) {
-  RegistrationResult pc = register_phase_correlation(source, target, debug);
-  RegistrationResult fm = register_fourier_mellin(source, target, debug);
-  return fm.score >= pc.score ? fm : pc;
-}
-
-RegistrationResult ImageRegistrator::register_phase_correlation(const RGBDFrame& source,
-                                                                const RGBDFrame& target,
-                                                                bool debug) {
+RegistrationResult register_phase_correlation_impl(const RGBDFrame& source, const RGBDFrame& target,
+                                                   const cv::Mat& source_dft,
+                                                   const cv::Mat& target_dft, bool debug) {
   CV_Assert(source.gray().size() == target.gray().size());
 
-  const cv::Mat corr = phase_correlation(source.dft(), target.dft(), false);
+  const cv::Mat corr = phase_correlation(source_dft, target_dft, false);
   const Peak peak = extract_peak(corr);
 
   cv::Mat affine = (cv::Mat_<float>(2, 3) << 1.f, 0.f, peak.shift.x,  //
@@ -71,14 +66,16 @@ RegistrationResult ImageRegistrator::register_phase_correlation(const RGBDFrame&
   return r;
 }
 
-RegistrationResult ImageRegistrator::register_fourier_mellin(const RGBDFrame& source,
-                                                             const RGBDFrame& target, bool debug) {
+RegistrationResult register_fourier_mellin_impl(const RGBDFrame& source, const RGBDFrame& target,
+                                                const Spectra& source_spectra,
+                                                const Spectra& target_spectra, bool debug) {
   CV_Assert(source.gray().size() == target.gray().size());
 
   const cv::Size sq = target.square_size();
   const cv::Point2f center(sq.width / 2.f, sq.height / 2.f);
 
-  const cv::Mat lp_corr = phase_correlation(source.log_polar_dft(), target.log_polar_dft(), false);
+  const cv::Mat lp_corr =
+      phase_correlation(source_spectra.logpolar_dft, target_spectra.logpolar_dft, false);
   const Peak lp = extract_peak(lp_corr);
 
   // Map log-polar pixel shifts back to physical rotation and scale.
@@ -92,9 +89,12 @@ RegistrationResult ImageRegistrator::register_fourier_mellin(const RGBDFrame& so
   for (int branch = 0; branch < 2; ++branch) {
     const cv::Mat rot_mat =
         cv::getRotationMatrix2D(center, rotation_mod_180 + 180.0 * branch, scale);
-    const cv::Mat source_rect_dft = source.rectified_square_dft(rot_mat, sq);
+    cv::Mat rectified;
+    cv::warpAffine(source.square_gray_zero_mean(), rectified, rot_mat, sq, cv::INTER_LINEAR,
+                   cv::BORDER_CONSTANT, cv::Scalar::all(0));
+    const cv::Mat source_rect_dft = compute_fft(rectified, source.square_window());
 
-    const cv::Mat corr = phase_correlation(source_rect_dft, target.square_dft(), false);
+    const cv::Mat corr = phase_correlation(source_rect_dft, target_spectra.square_dft, false);
     const Peak peak = extract_peak(corr);
 
     cv::Mat affine;
@@ -122,6 +122,38 @@ RegistrationResult ImageRegistrator::register_fourier_mellin(const RGBDFrame& so
     best.debug = std::move(dbg);
   }
   return best;
+}
+
+}  // namespace
+
+cv::Mat RegistrationResult::inverse_affine() const {
+  cv::Mat inv;
+  cv::invertAffineTransform(affine, inv);
+  return inv;
+}
+
+RegistrationResult ImageRegistrator::register_best(const RGBDFrame& source, const RGBDFrame& target,
+                                                   bool debug) {
+  const Spectra source_spectra = compute_spectra(source);
+  const Spectra target_spectra = compute_spectra(target);
+  RegistrationResult pc = register_phase_correlation_impl(source, target, source_spectra.dft,
+                                                          target_spectra.dft, debug);
+  RegistrationResult fm =
+      register_fourier_mellin_impl(source, target, source_spectra, target_spectra, debug);
+  return fm.score >= pc.score ? fm : pc;
+}
+
+RegistrationResult ImageRegistrator::register_phase_correlation(const RGBDFrame& source,
+                                                                const RGBDFrame& target,
+                                                                bool debug) {
+  return register_phase_correlation_impl(source, target, compute_spectra(source).dft,
+                                         compute_spectra(target).dft, debug);
+}
+
+RegistrationResult ImageRegistrator::register_fourier_mellin(const RGBDFrame& source,
+                                                             const RGBDFrame& target, bool debug) {
+  return register_fourier_mellin_impl(source, target, compute_spectra(source),
+                                      compute_spectra(target), debug);
 }
 
 }  // namespace image

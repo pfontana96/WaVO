@@ -144,15 +144,23 @@ PYBIND11_MODULE(_core, m) {
       .def(py::init<const cv::Mat&, const cv::Mat&, const CameraIntrinsics&>(), py::arg("bgr"),
            py::arg("depth"), py::arg("intrinsics"),
            "Undistorts bgr (uint8 HxWx3) / depth (HxW) on construction and\n"
-           "precomputes the windowed, square and log-polar DFTs.")
+           "caches the image-domain registration inputs (zero-mean gray,\n"
+           "square padding, smoothing windows). No spectra are stored.")
+      .def(
+          "compute_dfts",
+          [](const RGBDFrame& f) {
+            cv::Mat dft, square_dft, logpolar_dft;
+            f.compute_dfts(dft, square_dft, logpolar_dft);
+            return py::make_tuple(dft, square_dft, logpolar_dft);
+          },
+          "(dft, square_dft, logpolar_dft) of the frame, all (H, W, 2).")
       .def_property_readonly("intrinsics", &RGBDFrame::intrinsics)
       .def_property_readonly("color", &RGBDFrame::color)
       .def_property_readonly("depth", &RGBDFrame::depth)
       .def_property_readonly("gray", &RGBDFrame::gray)
       .def_property_readonly("gray_zero_mean", &RGBDFrame::gray_zero_mean)
-      .def_property_readonly("dft", &RGBDFrame::dft)
-      .def_property_readonly("shifted_dft", &RGBDFrame::shifted_dft)
-      .def_property_readonly("square_dft", &RGBDFrame::square_dft)
+      .def_property_readonly("square_gray_zero_mean", &RGBDFrame::square_gray_zero_mean)
+      .def_property_readonly("square_window", &RGBDFrame::square_window)
       .def_property_readonly(
           "shape", [](const RGBDFrame& f) { return py::make_tuple(f.gray().rows, f.gray().cols); })
       .def_property_readonly("square_shape",
@@ -165,27 +173,15 @@ PYBIND11_MODULE(_core, m) {
                                                    f.square_pad_offset().y};
                                return py::array_t<float>(2, v);
                              })
-      .def_property_readonly("log_polar_dft", &RGBDFrame::log_polar_dft)
       .def_property_readonly("max_log_polar_radius", &RGBDFrame::max_log_polar_radius)
       .def_property_readonly("n_theta_rows", &RGBDFrame::n_theta_rows)
-      .def("get_log_polar",
-           [](const RGBDFrame& f) {
-             return py::make_tuple(f.log_polar_dft(), f.max_log_polar_radius(), f.n_theta_rows());
-           })
       .def(
           "affine_transform",
           [](const RGBDFrame& f, const cv::Mat& rot_mat, std::pair<int, int> dsize) {
             return f.affine_transform(rot_mat, to_size(dsize));
           },
           py::arg("rot_mat"), py::arg("dsize"),
-          "Warp color+depth by the 2x3 rot_mat into a (width, height) canvas.")
-      .def(
-          "rectified_square_dft",
-          [](const RGBDFrame& f, const cv::Mat& rot_mat, std::pair<int, int> dsize) {
-            return f.rectified_square_dft(rot_mat, to_size(dsize));
-          },
-          py::arg("rot_mat"), py::arg("dsize"),
-          "Windowed DFT of the square zero-mean gray warped by rot_mat.");
+          "Warp color+depth by the 2x3 rot_mat into a (width, height) canvas.");
 
   py::module fft = image.def_submodule("fft", "Spectra and phase correlation");
   fft.def("fftshift", &wavo::image::fftshift, py::arg("m"),

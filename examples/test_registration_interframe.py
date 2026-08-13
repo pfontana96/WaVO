@@ -9,6 +9,7 @@ import open3d.core as o3c
 from wavo.rgbd_datasets import RGBDDatasetLoader
 
 from wavo._core.image import RGBDFrame, CameraIntrinsics
+from wavo._core.image.fft import fftshift
 from wavo._core.image.registration import ImageRegistrator, RegistrationResult
 
 from wavo._core.pointcloud import find_dense_correspondences_3d, estimate_pose
@@ -54,7 +55,8 @@ def plot_image_registration(
 
         for i, (name, frame) in enumerate(zip(("source", "target"), (source, target))):
 
-            re, im = cv2.split(frame.shifted_dft)
+            dft, _, _ = frame.compute_dfts()
+            re, im = cv2.split(fftshift(dft))
             mag = cv2.magnitude(re, im)
             logmag = cv2.log(mag, mag) + 1.0
 
