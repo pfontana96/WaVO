@@ -64,20 +64,14 @@ cv::Mat pad_square(const cv::Mat& img, int n, cv::Point2f* offset = nullptr) {
   return out;
 }
 
-/// np.hanning tiled over rows: tapers rho (columns), leaves theta untouched.
-cv::Mat radial_hann_window(cv::Size shape) {
-  cv::Mat row(1, shape.width, CV_32F);
-  for (int i = 0; i < row.cols; ++i)
-    row.at<float>(i) =
-        0.5f * (1.f - std::cos(2.f * static_cast<float>(CV_PI) * i / (row.cols - 1)));
-  return cv::repeat(row, shape.height, 1);
-}
-
 }  // namespace
 
 RGBDFrame::RGBDFrame(const cv::Mat& bgr, const cv::Mat& depth, const CameraIntrinsics& intrinsics)
     : intrinsics_{intrinsics.K, cv::Vec<float, 5>::all(0.f), intrinsics.no_valid_point} {
   CV_Assert(bgr.type() == CV_8UC3 && depth.channels() == 1 && bgr.size() == depth.size());
+
+  // TODO: Formalize this to be parametrizable
+  window_ = std::make_unique<image::TukeyWindow>(TukeyWindow(0.75));
 
   if (cv::norm(intrinsics.dist_coeffs, cv::NORM_L1) > 0.) {
     cv::Mat map_x, map_y;
@@ -95,9 +89,8 @@ RGBDFrame::RGBDFrame(const cv::Mat& bgr, const cv::Mat& depth, const CameraIntri
   cv::cvtColor(color_, gray_, cv::COLOR_BGR2GRAY);
   gray_.convertTo(gray_, CV_32F);
   gray_zero_mean_ = gray_ - median_of_u8_values(gray_);
-  cv::createHanningWindow(hann_window_, gray_.size(), CV_32F);
 
-  dft_ = compute_fft(gray_zero_mean_, hann_window_);
+  dft_ = compute_fft(gray_zero_mean_, window_->rectangular(gray_.size()));
   shifted_dft_ = fftshift(dft_);
 
   compute_log_polar();
@@ -123,7 +116,7 @@ void RGBDFrame::compute_log_polar() {
   int n = std::max(gray_.rows, gray_.cols);
   n += n % 2;
   square_gray_zero_mean_ = pad_square(gray_zero_mean_, n, &square_pad_offset_);
-  square_window_ = pad_square(hann_window_, n);
+  square_window_ = pad_square(window_->rectangular(gray_.size()), n);
 
   square_dft_ = compute_fft(square_gray_zero_mean_, square_window_);
   const cv::Mat mag = log_magnitude(fftshift(square_dft_));
@@ -138,7 +131,7 @@ void RGBDFrame::compute_log_polar() {
   logpolar = logpolar.rowRange(0, n).clone();
   logpolar_ = logpolar - median(logpolar);
 
-  log_polar_dft_ = compute_fft(logpolar_, radial_hann_window(logpolar_.size()));
+  log_polar_dft_ = compute_fft(logpolar_, window_->radial(logpolar_.size()));
 }
 
 }  // namespace image

@@ -137,7 +137,6 @@ if __name__ == "__main__":
     pcd_source.point.colors = o3c.Tensor(bgr_source.reshape(-1, 3))
 
     pcd_source_transformed = pcd_source.clone()
-
     pcd_source_transformed.transform(T)
 
     pcd_target = o3d.t.geometry.PointCloud()

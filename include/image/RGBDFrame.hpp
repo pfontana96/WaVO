@@ -1,6 +1,9 @@
 #pragma once
 
+#include <memory>
 #include <opencv2/core.hpp>
+
+#include "image/SmoothingWindows.hpp"
 
 namespace wavo {
 namespace image {
@@ -53,6 +56,8 @@ class RGBDFrame {
   cv::Point2f square_pad_offset_;
   cv::Mat logpolar_, log_polar_dft_;
   float max_log_polar_radius_ = 0.f;
+
+  std::unique_ptr<image::BaseWindow> window_;
 };
 
 }  // namespace image
