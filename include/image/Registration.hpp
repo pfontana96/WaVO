@@ -37,7 +37,7 @@ struct Score {
 };
 
 struct RegistrationResult {
-  cv::Mat affine;  ///< 2x3 CV_32F mapping target -> source pixels.
+  cv::Mat affine;  ///< 2x3 CV_32F mapping source -> target pixels.
   Score score;
 
   std::shared_ptr<RegistrationDebugData> debug;  ///< nullptr unless debug was requested.

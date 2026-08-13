@@ -77,9 +77,7 @@ DenseCorrespondences find_dense_correspondences_3d(const image::RGBDFrame& sourc
 
   const image::RegistrationResult registration =
       image::ImageRegistrator::register_best(source, target);
-  cv::Mat source_to_target;
-  cv::invertAffineTransform(registration.affine, source_to_target);
-  const cv::Matx23f A = source_to_target;
+  const cv::Matx23f A = registration.affine;
 
   cv::Mat grad;
   if (min_grad > 0) {

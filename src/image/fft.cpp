@@ -24,7 +24,7 @@ cv::Mat compute_fft(const cv::Mat& img, const cv::Mat& window, bool shifted) {
 cv::Mat phase_correlation(const cv::Mat& src_dft, const cv::Mat& target_dft, bool normalize,
                           float eps_rel) {
   cv::Mat cross;
-  cv::mulSpectrums(src_dft, target_dft, cross, 0, /*conjB=*/true);
+  cv::mulSpectrums(target_dft, src_dft, cross, 0, /*conjB=*/true);
   if (normalize) {  // keep phase only (regularized: see header on eps_rel)
     cv::Mat planes[2], mag;
     cv::split(cross, planes);

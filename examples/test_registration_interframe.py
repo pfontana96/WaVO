@@ -32,8 +32,8 @@ def plot_image_registration(
     title: str,
 ):
 
-    warped_target = cv2.warpAffine(
-        target.color, result.affine, (target.shape[1], target.shape[0])
+    warped_source = cv2.warpAffine(
+        source.color, result.affine, (source.shape[1], source.shape[0])
     )
 
     nrows = 2 if result.debug is None else 3
@@ -47,8 +47,8 @@ def plot_image_registration(
     axs[0, 1].set_title("target frame")
     axs[0, 1].imshow(target.color)
 
-    axs[0, 2].set_title("warped target")
-    axs[0, 2].imshow(warped_target)
+    axs[0, 2].set_title("warped source")
+    axs[0, 2].imshow(warped_source)
 
     if result.debug is not None:
 
@@ -67,13 +67,13 @@ def plot_image_registration(
     axs[nrows - 1, 0].set_axis_off()
     axs[nrows - 1, 2].set_axis_off()
 
-    axs[nrows - 1, 1].set_title("warped_target - source difference")
-    warped_target_gray = cv2.warpAffine(
-        target.gray, result.affine, (target.shape[1], target.shape[0])
+    axs[nrows - 1, 1].set_title("target - warped_source difference")
+    warped_source_gray = cv2.warpAffine(
+        source.gray, result.affine, (source.shape[1], source.shape[0])
     )
-    valid = warped_target_gray != 0
+    valid = warped_source_gray != 0
     diff = np.zeros(source.gray.shape, dtype=np.float32)
-    diff[valid] = source.gray[valid] - warped_target_gray[valid]
+    diff[valid] = target.gray[valid] - warped_source_gray[valid]
     axs[nrows - 1, 1].imshow(diff, cmap="coolwarm")
 
 
