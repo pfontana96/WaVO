@@ -44,7 +44,7 @@ float median_of_u8_values(const cv::Mat& m) {
 }
 
 /// log1p of the magnitude of a CV_32FC2 spectrum.
-cv::Mat log_magnitude(const cv::Mat& complex_dft) {
+cv::Mat log1p_magnitude(const cv::Mat& complex_dft) {
   cv::Mat planes[2], mag;
   cv::split(complex_dft, planes);
   cv::magnitude(planes[0], planes[1], mag);
@@ -107,7 +107,8 @@ void RGBDFrame::compute_dfts(cv::Mat& dft, cv::Mat& square_dft, cv::Mat& logpola
   dft = compute_fft(gray_zero_mean_, rect_window_);
 
   square_dft = compute_fft(square_gray_zero_mean_, square_window_);
-  const cv::Mat mag = log_magnitude(fftshift(square_dft));
+  // Spectrum whitening
+  const cv::Mat logmag = log1p_magnitude(fftshift(square_dft));
 
   const int n = square_gray_zero_mean_.rows;
   const cv::Point2f center(static_cast<float>(n / 2), static_cast<float>(n / 2));
@@ -115,7 +116,7 @@ void RGBDFrame::compute_dfts(cv::Mat& dft, cv::Mat& square_dft, cv::Mat& logpola
   // Semi-log polar mapping: oversample theta 2x, then keep [0, 180).
   const int flags = cv::WARP_POLAR_LOG + cv::INTER_LINEAR + cv::WARP_FILL_OUTLIERS;
   cv::Mat logpolar;
-  cv::warpPolar(mag, logpolar, cv::Size(n, 2 * n), center, max_log_polar_radius_, flags);
+  cv::warpPolar(logmag, logpolar, cv::Size(n, 2 * n), center, max_log_polar_radius_, flags);
   logpolar = logpolar.rowRange(0, n).clone();
   logpolar -= median(logpolar);
 

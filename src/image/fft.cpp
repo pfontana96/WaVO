@@ -21,15 +21,14 @@ cv::Mat compute_fft(const cv::Mat& img, const cv::Mat& window, bool shifted) {
   return shifted ? fftshift(out) : out;
 }
 
-cv::Mat phase_correlation(const cv::Mat& src_dft, const cv::Mat& target_dft, bool normalize,
-                          float eps_rel) {
+cv::Mat correlate(const cv::Mat& src_dft, const cv::Mat& target_dft, float norm_alpha) {
   cv::Mat cross;
   cv::mulSpectrums(target_dft, src_dft, cross, 0, /*conjB=*/true);
-  if (normalize) {  // keep phase only (regularized: see header on eps_rel)
+  if (norm_alpha >= 1e-6) {  // keep phase only (regularized: see header on norm_alpha)
     cv::Mat planes[2], mag;
     cv::split(cross, planes);
     cv::magnitude(planes[0], planes[1], mag);
-    mag += eps_rel * static_cast<float>(cv::mean(mag)[0]) + 1e-12f;
+    cv::pow(mag, norm_alpha, mag);
     planes[0] /= mag;
     planes[1] /= mag;
     cv::merge(planes, 2, cross);

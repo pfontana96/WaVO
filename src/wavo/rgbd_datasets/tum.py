@@ -104,7 +104,7 @@ class TUMRGBDDatasetLoader(RGBDDatasetLoader, fmt="tum"):
     def __len__(self) -> int:
         return len(self._pairs)
 
-    def __getitem__(self, i: int) -> BaseRGBDEntry:
+    def _getitem(self, i: int) -> BaseRGBDEntry:
         rgb_stamp, rgb_file, depth_stamp, depth_file = self._pairs[i]
 
         bgr = cv2.imread(str(self.root / rgb_file))

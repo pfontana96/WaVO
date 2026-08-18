@@ -52,7 +52,7 @@ RegistrationResult register_phase_correlation_impl(const RGBDFrame& source, cons
                                                    const cv::Mat& target_dft, bool debug) {
   CV_Assert(source.gray().size() == target.gray().size());
 
-  const cv::Mat corr = phase_correlation(source_dft, target_dft, false);
+  const cv::Mat corr = correlate(source_dft, target_dft, 0.0f);
   const Peak peak = extract_peak(corr);
 
   cv::Mat affine = (cv::Mat_<float>(2, 3) << 1.f, 0.f, peak.shift.x,  //
@@ -74,8 +74,7 @@ RegistrationResult register_fourier_mellin_impl(const RGBDFrame& source, const R
   const cv::Size sq = target.square_size();
   const cv::Point2f center(sq.width / 2.f, sq.height / 2.f);
 
-  const cv::Mat lp_corr =
-      phase_correlation(source_spectra.logpolar_dft, target_spectra.logpolar_dft, false);
+  const cv::Mat lp_corr = correlate(source_spectra.logpolar_dft, target_spectra.logpolar_dft, 0.0f);
   const Peak lp = extract_peak(lp_corr);
 
   // Map log-polar pixel shifts back to physical rotation and scale.
@@ -94,7 +93,7 @@ RegistrationResult register_fourier_mellin_impl(const RGBDFrame& source, const R
                    cv::BORDER_CONSTANT, cv::Scalar::all(0));
     const cv::Mat source_rect_dft = compute_fft(rectified, source.square_window());
 
-    const cv::Mat corr = phase_correlation(source_rect_dft, target_spectra.square_dft, false);
+    const cv::Mat corr = correlate(source_rect_dft, target_spectra.square_dft, 0.0f);
     const Peak peak = extract_peak(corr);
 
     cv::Mat affine;

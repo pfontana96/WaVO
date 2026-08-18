@@ -188,9 +188,9 @@ PYBIND11_MODULE(_core, m) {
           "np.fft.fftshift over the two spatial axes.");
   fft.def("compute_fft", &wavo::image::compute_fft, py::arg("img"), py::arg("window") = cv::Mat(),
           py::arg("shifted") = false, "DFT of img * window as an (H, W, 2) array.");
-  fft.def("phase_correlation", &wavo::image::phase_correlation, py::arg("src_dft"),
-          py::arg("target_dft"), py::arg("normalize") = true, py::arg("eps_rel") = 1e-3f,
-          "Correlation surface (fftshifted) between two spectra; eps_rel\n"
+  fft.def("correlate", &wavo::image::correlate, py::arg("src_dft"), py::arg("target_dft"),
+          py::arg("norm_alpha") = 0.0f,
+          "Correlation surface (fftshifted) between two spectra; norm_alpha\n"
           "regularizes the whitening against noise-dominated bins.");
   py::class_<wavo::image::Peak>(fft, "Peak", "Correlation peak (height + subpixel shift).")
       .def_readonly("value", &wavo::image::Peak::value)

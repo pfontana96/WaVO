@@ -76,6 +76,11 @@ if __name__ == "__main__":
         times.append(elapsed)
         prev = cur
 
+    load_times = dataset.time_metrics
+    print(
+        f"RGBD FRAME CREATION TIMES:\n\tmean: {load_times['mean']:.4f} s\n\tmedian: {load_times['median']:.4f} s\n\tmax: {load_times['max']:.4f} s\n\tmin: {load_times['mean']:.4f} s"
+    )
+
     est_traj, gt_traj = np.array(est_traj), np.array(gt_traj)
     print(
         f"\nATE RMSE: {np.sqrt(np.mean(np.sum((est_traj - gt_traj) ** 2, axis=1))):.4f} m"
