@@ -28,6 +28,8 @@ TUM_INTRINSICS = CameraIntrinsics(
     dist_coeffs=np.array([0.2312, -0.7849, -0.0033, -0.0001, 0.9172]),
 )
 
+DEBUG = True
+
 
 def plot_image_registration(
     source: RGBDFrame,
@@ -108,7 +110,7 @@ if __name__ == "__main__":
 
     start = perf_counter()
     correlation_result = correlation_registrator.run(
-        entry_a.rgbd_frame, entry_b.rgbd_frame, debug=True
+        entry_a.rgbd_frame, entry_b.rgbd_frame, debug=DEBUG
     )
     end = perf_counter()
     print(f"Cross correlation registration took {end - start:.4f} s")
@@ -119,7 +121,7 @@ if __name__ == "__main__":
 
     start = perf_counter()
     fourier_mellin_result = fourier_mellin_registrator.run(
-        entry_a.rgbd_frame, entry_b.rgbd_frame, debug=True
+        entry_a.rgbd_frame, entry_b.rgbd_frame, debug=DEBUG
     )
     end = perf_counter()
     print(f"Fourier-Mellin registration took {end - start:.4f} s")
@@ -130,7 +132,7 @@ if __name__ == "__main__":
 
     start = perf_counter()
     best_result = best_registrator.run(
-        entry_a.rgbd_frame, entry_b.rgbd_frame, debug=True
+        entry_a.rgbd_frame, entry_b.rgbd_frame, debug=DEBUG
     )
     end = perf_counter()
     print(f"Best registration took {end - start:.4f} s")

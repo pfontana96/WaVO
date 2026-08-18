@@ -15,6 +15,38 @@ struct CameraIntrinsics {
   float no_valid_point = 0.f;
 };
 
+// gray image spectra (FFTs)
+class FrameSpectra {
+ public:
+  FrameSpectra() : empty_(true) {};
+
+  enum class Type { DFT, SQUARE_DFT, LOGPOLAR_DFT };
+
+  cv::Mat get(Type type) const {
+    switch (type) {
+      case Type::DFT:
+        return dft_;
+      case Type::SQUARE_DFT:
+        return square_dft_;
+      case Type::LOGPOLAR_DFT:
+        return logpolar_dft_;
+    }
+  };
+
+  void set(cv::Mat dft, cv::Mat square_dft, cv::Mat logpolar_dft) {
+    dft_ = dft;
+    square_dft_ = square_dft;
+    logpolar_dft_ = logpolar_dft;
+    empty_ = false;
+  };
+
+  bool empty() const { return empty_; };
+
+ private:
+  bool empty_;
+  cv::Mat dft_, square_dft_, logpolar_dft_;
+};
+
 /// An RGB/depth pair, undistorted at construction, with every image-domain
 /// input to Fourier-based registration cached: zero-mean gray, its square
 /// zero-padded copy, the smoothing windows and the log-polar geometry.
@@ -43,6 +75,8 @@ class RGBDFrame {
   float max_log_polar_radius() const { return max_log_polar_radius_; }
   int n_theta_rows() const { return square_gray_zero_mean_.rows; }
 
+  cv::Mat get_or_compute_dft(FrameSpectra::Type type);
+
   /// Color and depth warped by the 2x3 `rot_mat` into a `dsize` canvas, with
   /// all registration data recomputed on the warped pair.
   RGBDFrame affine_transform(const cv::Mat& rot_mat, cv::Size dsize) const;
@@ -58,6 +92,8 @@ class RGBDFrame {
   float max_log_polar_radius_ = 0.f;
 
   std::unique_ptr<image::BaseWindow> window_;
+
+  FrameSpectra spectra_;
 };
 
 }  // namespace image

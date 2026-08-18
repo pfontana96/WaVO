@@ -63,8 +63,7 @@ class ImageRegistrator {
 
   explicit ImageRegistrator(const Parameters& params);
 
-  RegistrationResult run(const RGBDFrame& source, const RGBDFrame& target,
-                         bool debug = false) const;
+  RegistrationResult run(RGBDFrame& source, RGBDFrame& target, bool debug = false) const;
 
  private:
   std::string type_;

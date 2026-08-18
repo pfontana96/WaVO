@@ -123,6 +123,16 @@ void RGBDFrame::compute_dfts(cv::Mat& dft, cv::Mat& square_dft, cv::Mat& logpola
   logpolar_dft = compute_fft(logpolar, radial_window_);
 }
 
+cv::Mat RGBDFrame::get_or_compute_dft(FrameSpectra::Type type) {
+  if (spectra_.empty()) {
+    // Compute DFTs
+    cv::Mat dft, square_dft, logpolar_dft;
+    compute_dfts(dft, square_dft, logpolar_dft);
+    spectra_.set(dft, square_dft, logpolar_dft);
+  }
+  return spectra_.get(type);
+};
+
 RGBDFrame RGBDFrame::affine_transform(const cv::Mat& rot_mat, cv::Size dsize) const {
   cv::Mat warped_bgr, warped_depth;
   cv::warpAffine(color_, warped_bgr, rot_mat, dsize, cv::INTER_LINEAR, cv::BORDER_CONSTANT,
