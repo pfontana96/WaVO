@@ -2,10 +2,12 @@
 
 #include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <opencv2/core.hpp>
 
+#include "Parameters.hpp"
 #include "image/RGBDFrame.hpp"
 #include "image/fft.hpp"
 
@@ -47,18 +49,26 @@ struct RegistrationResult {
 
 class ImageRegistrator {
  public:
-  /// Whichever of the two methods scores the lower RMSE.
-  static RegistrationResult register_best(const RGBDFrame& source, const RGBDFrame& target,
-                                          bool debug = false);
+  /// `type` is "best", "correlation" or "fourier_mellin"; anything else
+  /// throws std::invalid_argument.
+  explicit ImageRegistrator(const std::string& type, float norm_alpha = 0.f);
 
-  /// Translation only, from the phase correlation of the windowed DFTs.
-  static RegistrationResult register_phase_correlation(const RGBDFrame& source,
-                                                       const RGBDFrame& target, bool debug = false);
+  /// Config contract for the Parameters constructor.
+  static const ParameterSchema& schema() {
+    static const auto s = ParameterSchema("registration")
+                              .require<std::string>("type")
+                              .optional<float>("norm_alpha", 0.f);
+    return s;
+  }
 
-  /// Rotation + scale from log-polar spectrum correlation, then translation;
-  /// both 180°-ambiguous branches are scored and the better one returned.
-  static RegistrationResult register_fourier_mellin(const RGBDFrame& source,
-                                                    const RGBDFrame& target, bool debug = false);
+  explicit ImageRegistrator(const Parameters& params);
+
+  RegistrationResult run(const RGBDFrame& source, const RGBDFrame& target,
+                         bool debug = false) const;
+
+ private:
+  std::string type_;
+  float norm_alpha_;
 };
 
 }  // namespace image

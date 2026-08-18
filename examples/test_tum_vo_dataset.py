@@ -1,5 +1,6 @@
 from datetime import date
 from time import perf_counter
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,8 +8,10 @@ from scipy.spatial.transform import Rotation
 
 from wavo.rgbd_datasets import RGBDDatasetLoader
 
+from wavo._core import Parameters
 from wavo._core.pointcloud import estimate_pose
 from wavo._core.image import CameraIntrinsics
+from wavo._core.image.registration import ImageRegistrator
 
 TUM_INTRINSICS = CameraIntrinsics(
     K=np.array(
@@ -23,6 +26,10 @@ TUM_INTRINSICS = CameraIntrinsics(
 
 
 if __name__ == "__main__":
+
+    parameters_file = Path(__file__).parent / "registration_interframe.yaml"
+    params = Parameters.from_yaml(str(parameters_file))
+    registrator = ImageRegistrator(params.scoped("best"))
 
     root = "data/rgbd_dataset_freiburg1_desk2"
     dataset = RGBDDatasetLoader.load("tum", root, intrinsics=TUM_INTRINSICS)
@@ -52,7 +59,8 @@ if __name__ == "__main__":
 
         start = perf_counter()
         # frames are undistorted at load time -> use the rectified intrinsics
-        T = estimate_pose(prev.rgbd_frame, cur.rgbd_frame, T)
+        r = registrator.run(prev.rgbd_frame, cur.rgbd_frame)
+        T = estimate_pose(prev.rgbd_frame, cur.rgbd_frame, r, T)
         pose = pose @ np.linalg.inv(T)
         end = perf_counter()
         elapsed = end - start

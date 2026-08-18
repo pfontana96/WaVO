@@ -1,0 +1,11 @@
+fourier_mellin:
+  norm_alpha: &norm_alpha 0.5
+  type: fourier_mellin
+
+correlation:
+  norm_alpha: *norm_alpha
+  type: correlation
+
+best:
+  norm_alpha: *norm_alpha
+  type: best

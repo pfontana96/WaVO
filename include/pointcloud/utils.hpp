@@ -3,6 +3,7 @@
 #include <opencv2/core.hpp>
 
 #include "image/RGBDFrame.hpp"
+#include "image/Registration.hpp"
 
 namespace wavo {
 namespace pointcloud {
@@ -22,21 +23,23 @@ struct DenseCorrespondences {
   cv::Mat bgr_target;  ///< N x 3 CV_8U colors at the target pixels.
 };
 
-/// Registers source to target (ImageRegistrator::register_best), then walks a
-/// stride-spaced pixel grid of source, keeping points whose image gradient
-/// exceeds `min_grad`, whose affine-mapped target pixel lands in bounds and
-/// whose depth is valid (non-zero) in both frames; the survivors are
-/// deprojected through each frame's intrinsics.
+/// Walks a stride-spaced pixel grid of source, mapping pixels into target
+/// through `registration.affine`, keeping points whose image gradient exceeds
+/// `min_grad`, whose mapped target pixel lands in bounds and whose depth is
+/// valid (non-zero) in both frames; the survivors are deprojected through
+/// each frame's intrinsics.
 DenseCorrespondences find_dense_correspondences_3d(const image::RGBDFrame& source,
-                                                   const image::RGBDFrame& target, int stride = 6,
-                                                   float min_grad = 8.f);
+                                                   const image::RGBDFrame& target,
+                                                   const image::RegistrationResult& registration,
+                                                   int stride = 6, float min_grad = 8.f);
 
-/// Rigid source -> target camera-frame pose from the dense 3D correspondences,
-/// solved closed-form by Open3D's point-to-point estimator (Umeyama). Returns
-/// the 4x4 CV_32F transform. `init_guess` is a 4x4 pose (empty = identity),
-/// forwarded to Open3D; the closed-form solution does not depend on it.
-/// Throws when fewer than 3 correspondences survive.
+/// Rigid source -> target camera-frame pose from the dense 3D correspondences
+/// induced by `registration`, solved closed-form by Open3D's point-to-point
+/// estimator (Umeyama). Returns the 4x4 CV_32F transform. `init_guess` is a
+/// 4x4 pose (empty = identity), forwarded to Open3D; the closed-form solution
+/// does not depend on it. Throws when fewer than 3 correspondences survive.
 cv::Mat estimate_pose(const image::RGBDFrame& source, const image::RGBDFrame& target,
+                      const image::RegistrationResult& registration,
                       const cv::Mat& init_guess = cv::Mat(), int stride = 4);
 
 }  // namespace pointcloud

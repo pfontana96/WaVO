@@ -69,14 +69,15 @@ cv::Mat deproject(const cv::Mat& uv_points, const cv::Mat& z,
 }
 
 DenseCorrespondences find_dense_correspondences_3d(const image::RGBDFrame& source,
-                                                   const image::RGBDFrame& target, int stride,
-                                                   float min_grad) {
+                                                   const image::RGBDFrame& target,
+                                                   const image::RegistrationResult& registration,
+                                                   int stride, float min_grad) {
   if (source.gray().size() != target.gray().size())
     throw std::invalid_argument("source and target must have the same shape");
+  if (registration.affine.empty())
+    throw std::invalid_argument("registration has no affine (default-constructed result?)");
   const int h = source.gray().rows, w = source.gray().cols;
 
-  const image::RegistrationResult registration =
-      image::ImageRegistrator::register_best(source, target);
   const cv::Matx23f A = registration.affine;
 
   cv::Mat grad;
@@ -137,10 +138,12 @@ DenseCorrespondences find_dense_correspondences_3d(const image::RGBDFrame& sourc
 }
 
 cv::Mat estimate_pose(const image::RGBDFrame& source, const image::RGBDFrame& target,
-                      const cv::Mat& init_guess, int stride) {
+                      const image::RegistrationResult& registration, const cv::Mat& init_guess,
+                      int stride) {
   namespace o3c = open3d::core;
 
-  const DenseCorrespondences c = find_dense_correspondences_3d(source, target, stride);
+  const DenseCorrespondences c =
+      find_dense_correspondences_3d(source, target, registration, stride);
   const int n = c.xyz_source.rows;
   if (n < 3) throw std::runtime_error("estimate_pose: fewer than 3 valid 3D correspondences");
 
