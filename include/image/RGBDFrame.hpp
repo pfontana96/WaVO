@@ -15,9 +15,42 @@ struct CameraIntrinsics {
   float no_valid_point = 0.f;
 };
 
-/// An RGB/depth pair, undistorted at construction, with everything a frame
-/// needs for Fourier-based registration precomputed: windowed DFT, square
-/// zero-padded DFT and log-polar DFT of its spectrum magnitude.
+// gray image spectra (FFTs)
+class FrameSpectra {
+ public:
+  FrameSpectra() : empty_(true) {};
+
+  enum class Type { DFT, SQUARE_DFT, LOGPOLAR_DFT };
+
+  cv::Mat get(Type type) const {
+    switch (type) {
+      case Type::DFT:
+        return dft_;
+      case Type::SQUARE_DFT:
+        return square_dft_;
+      case Type::LOGPOLAR_DFT:
+        return logpolar_dft_;
+    }
+  };
+
+  void set(cv::Mat dft, cv::Mat square_dft, cv::Mat logpolar_dft) {
+    dft_ = dft;
+    square_dft_ = square_dft;
+    logpolar_dft_ = logpolar_dft;
+    empty_ = false;
+  };
+
+  bool empty() const { return empty_; };
+
+ private:
+  bool empty_;
+  cv::Mat dft_, square_dft_, logpolar_dft_;
+};
+
+/// An RGB/depth pair, undistorted at construction, with every image-domain
+/// input to Fourier-based registration cached: zero-mean gray, its square
+/// zero-padded copy, the smoothing windows and the log-polar geometry.
+/// No spectra are stored — compute_dfts() produces them on demand.
 class RGBDFrame {
  public:
   /// `bgr` must be CV_8UC3, `depth` single-channel with the same size.
@@ -25,39 +58,42 @@ class RGBDFrame {
   /// matrix with zeroed distortion — use those for downstream (de)projection.
   RGBDFrame(const cv::Mat& bgr, const cv::Mat& depth, const CameraIntrinsics& intrinsics);
 
+  /// Computes the windowed DFT of the zero-mean gray (`dft`), of its square
+  /// zero-padded copy (`square_dft`) and of the log-polar image of the
+  /// square spectrum magnitude (`logpolar_dft`), all CV_32FC2.
+  void compute_dfts(cv::Mat& dft, cv::Mat& square_dft, cv::Mat& logpolar_dft) const;
+
   const CameraIntrinsics& intrinsics() const { return intrinsics_; }
   const cv::Mat& color() const { return color_; }
   const cv::Mat& depth() const { return depth_; }
   const cv::Mat& gray() const { return gray_; }  // CV_32F
   const cv::Mat& gray_zero_mean() const { return gray_zero_mean_; }
-  const cv::Mat& dft() const { return dft_; }  // CV_32FC2
-  const cv::Mat& shifted_dft() const { return shifted_dft_; }
-  const cv::Mat& square_dft() const { return square_dft_; }
+  const cv::Mat& square_gray_zero_mean() const { return square_gray_zero_mean_; }
+  const cv::Mat& square_window() const { return square_window_; }
   cv::Point2f square_pad_offset() const { return square_pad_offset_; }
   cv::Size square_size() const { return square_gray_zero_mean_.size(); }
-  const cv::Mat& log_polar_dft() const { return log_polar_dft_; }
   float max_log_polar_radius() const { return max_log_polar_radius_; }
-  int n_theta_rows() const { return logpolar_.rows; }
+  int n_theta_rows() const { return square_gray_zero_mean_.rows; }
+
+  cv::Mat get_or_compute_dft(FrameSpectra::Type type);
 
   /// Color and depth warped by the 2x3 `rot_mat` into a `dsize` canvas, with
   /// all registration data recomputed on the warped pair.
   RGBDFrame affine_transform(const cv::Mat& rot_mat, cv::Size dsize) const;
 
-  /// Windowed DFT of the square zero-mean gray warped by the 2x3 `rot_mat`.
-  cv::Mat rectified_square_dft(const cv::Mat& rot_mat, cv::Size dsize) const;
-
  private:
-  void compute_log_polar();
+  /// Square padding, windows and log-polar geometry — construction only.
+  void prepare_square_geometry();
 
   CameraIntrinsics intrinsics_;
-  cv::Mat color_, depth_, gray_, gray_zero_mean_, hann_window_;
-  cv::Mat dft_, shifted_dft_;
-  cv::Mat square_gray_zero_mean_, square_window_, square_dft_;
+  cv::Mat color_, depth_, gray_, gray_zero_mean_, rect_window_;
+  cv::Mat square_gray_zero_mean_, square_window_, radial_window_;
   cv::Point2f square_pad_offset_;
-  cv::Mat logpolar_, log_polar_dft_;
   float max_log_polar_radius_ = 0.f;
 
   std::unique_ptr<image::BaseWindow> window_;
+
+  FrameSpectra spectra_;
 };
 
 }  // namespace image

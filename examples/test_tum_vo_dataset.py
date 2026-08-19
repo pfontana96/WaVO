@@ -1,5 +1,6 @@
 from datetime import date
 from time import perf_counter
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,7 +8,8 @@ from scipy.spatial.transform import Rotation
 
 from wavo.rgbd_datasets import RGBDDatasetLoader
 
-from wavo._core.pointcloud import estimate_pose
+from wavo._core import Parameters
+from wavo._core.odom import FMUmeyamaOdometer
 from wavo._core.image import CameraIntrinsics
 
 TUM_INTRINSICS = CameraIntrinsics(
@@ -22,7 +24,18 @@ TUM_INTRINSICS = CameraIntrinsics(
 )
 
 
+def inverse(T: np.ndarray) -> np.ndarray:
+    Tinv = np.eye(4, dtype=np.float32)
+    Tinv[:3, :3] = T[:3, :3].T
+    Tinv[:3, 3] = -Tinv[:3, :3] @ T[:3, 3]
+    return Tinv
+
+
 if __name__ == "__main__":
+
+    parameters_file = Path(__file__).parent / "tum_vo_dataset.yaml"
+    params = Parameters.from_yaml(str(parameters_file))
+    odometer = FMUmeyamaOdometer(params)
 
     root = "data/rgbd_dataset_freiburg1_desk2"
     dataset = RGBDDatasetLoader.load("tum", root, intrinsics=TUM_INTRINSICS)
@@ -46,14 +59,15 @@ if __name__ == "__main__":
     est_poses = [(prev.stamp, pose.copy())]  # (timestamp, 4x4 world pose)
     times = []
 
-    T = np.eye(4, dtype=np.float32)
+    odometer.add_frame(prev.rgbd_frame, prev.stamp)
     for i in range(1, len(dataset)):
         cur = dataset[i]
 
         start = perf_counter()
         # frames are undistorted at load time -> use the rectified intrinsics
-        T = estimate_pose(prev.rgbd_frame, cur.rgbd_frame, T)
-        pose = pose @ np.linalg.inv(T)
+        odometer.add_frame(cur.rgbd_frame, cur.stamp)
+        stamped_transform = odometer.get_transform()
+        pose = pose @ inverse(stamped_transform.transform)
         end = perf_counter()
         elapsed = end - start
 
@@ -65,9 +79,9 @@ if __name__ == "__main__":
         )
         print(
             f"frame {i}/{len(dataset) - 1} ({elapsed:.4f} s)"
-            f"rot  est {ang(T):6.3f}  gt {ang(T_rel_gt):6.3f}   "
-            f"trans est {np.linalg.norm(T[:3,3])*1000:7.2f}mm  gt {np.linalg.norm(T_rel_gt[:3,3])*1000:7.2f}mm  "
-            f"ratio {np.linalg.norm(T[:3,3])/max(np.linalg.norm(T_rel_gt[:3,3]),1e-9):.3f}"
+            f"rot  est {ang(stamped_transform.transform):6.3f}  gt {ang(T_rel_gt):6.3f}   "
+            f"trans est {np.linalg.norm(stamped_transform.transform[:3,3])*1000:7.2f}mm  gt {np.linalg.norm(T_rel_gt[:3,3])*1000:7.2f}mm  "
+            f"ratio {np.linalg.norm(stamped_transform.transform[:3,3])/max(np.linalg.norm(T_rel_gt[:3,3]),1e-9):.3f}"
         )
 
         est_traj.append(pose[:3, 3].copy())
@@ -75,6 +89,11 @@ if __name__ == "__main__":
         est_poses.append((cur.stamp, pose.copy()))
         times.append(elapsed)
         prev = cur
+
+    load_times = dataset.time_metrics
+    print(
+        f"RGBD FRAME CREATION TIMES:\n\tmean: {load_times['mean']:.4f} s\n\tmedian: {load_times['median']:.4f} s\n\tmax: {load_times['max']:.4f} s\n\tmin: {load_times['mean']:.4f} s"
+    )
 
     est_traj, gt_traj = np.array(est_traj), np.array(gt_traj)
     print(

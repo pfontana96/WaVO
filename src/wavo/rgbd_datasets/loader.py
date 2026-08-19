@@ -3,6 +3,9 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar, Iterator
+from time import perf_counter
+
+import numpy as np
 
 from wavo.rgbd_datasets.base_entry import BaseRGBDEntry
 
@@ -45,6 +48,18 @@ class RGBDDatasetLoader(ABC):
     def __init__(self, root: Path, intrinsics: CameraIntrinsics | None = None):
         self.root = Path(root)
         self.intrinsics = intrinsics
+        self._times = []
+
+    @property
+    def time_metrics(self) -> dict:
+        times = np.asarray(self._times)
+        return {
+            "n": len(times),
+            "mean": times.mean(),
+            "median": np.median(times),
+            "max": times.max(),
+            "min": times.min(),
+        }
 
     @classmethod
     def load(cls, fmt: str, path: Path, **kwargs) -> "RGBDDatasetLoader":
@@ -66,9 +81,17 @@ class RGBDDatasetLoader(ABC):
     def __len__(self) -> int:
         """Number of associated RGB/depth pairs in the dataset."""
 
-    @abstractmethod
     def __getitem__(self, i: int) -> BaseRGBDEntry:
         """Read pair ``i`` from disk and return it as an entry."""
+        s = perf_counter()
+        entry = self._getitem(i)
+        e = perf_counter()
+        self._times.append(e - s)
+        return entry
+
+    @abstractmethod
+    def _getitem(self, i: int) -> BaseRGBDEntry:
+        pass
 
     def __iter__(self) -> Iterator[BaseRGBDEntry]:
         for i in range(len(self)):

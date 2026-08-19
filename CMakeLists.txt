@@ -25,6 +25,8 @@ find_package(OpenCV 4 REQUIRED)
 # Open3D works too when configuring the C++ library directly. No version
 # arg: Conan pins it, and Open3D's config only accepts exact matches.
 find_package(Open3D REQUIRED)
+# Only used inside src/Parameters.cpp; not part of the public API.
+find_package(yaml-cpp REQUIRED)
 
 # Core C++ library — no Python dependency, so it can be reused / tested natively.
 file(GLOB_RECURSE WAVO_CORE_SOURCES CONFIGURE_DEPENDS
@@ -37,6 +39,7 @@ target_include_directories(
 # will appear in the 3D-registration API the same way.
 target_link_libraries(wavo_core PUBLIC opencv_core opencv_imgproc
                                        opencv_calib3d Open3D::Open3D)
+target_link_libraries(wavo_core PRIVATE yaml-cpp::yaml-cpp)
 
 # Python extension module (wavo._core)
 pybind11_add_module(_core bindings/wavo_bindings.cpp)

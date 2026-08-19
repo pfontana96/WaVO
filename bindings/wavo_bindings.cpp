@@ -4,17 +4,22 @@
 #include <pybind11/stl.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <opencv2/core.hpp>
 
+#include "Parameters.hpp"
 #include "image/RGBDFrame.hpp"
 #include "image/Registration.hpp"
 #include "image/fft.hpp"
 #include "pointcloud/utils.hpp"
+
+#include "odom/FMUmeyamaOdometer.hpp"
 
 namespace py = pybind11;
 
@@ -122,10 +127,105 @@ CameraIntrinsics make_intrinsics(const cv::Mat& K, const cv::Mat& dist_coeffs,
 
 cv::Size to_size(std::pair<int, int> wh) { return {wh.first, wh.second}; }
 
+// Parameters <-> Python. Outbound is pybind's std::variant caster; inbound is
+// an explicit isinstance dispatch so a value can never land in the wrong
+// alternative (bool precedes int because Python bools ARE ints; pybind's
+// convert pass would e.g. truncate 1.5 to int depending on variant order).
+// Dicts flatten into dotted keys and lists of dicts/lists get a numeric
+// segment per element, exactly like the YAML loader; None is skipped so the
+// key stays absent (the YAML null behavior).
+void set_py_value(wavo::Parameters& p, const std::string& key, const py::handle& v) {
+  if (v.is_none()) return;
+  if (py::isinstance<py::bool_>(v)) return p.set(key, v.cast<bool>());
+  if (py::isinstance<py::int_>(v)) return p.set(key, v.cast<std::int64_t>());
+  if (py::isinstance<py::float_>(v)) return p.set(key, v.cast<double>());
+  if (py::isinstance<py::str>(v)) return p.set(key, v.cast<std::string>());
+  if (py::isinstance<py::dict>(v)) {
+    for (const auto& kv : py::reinterpret_borrow<py::dict>(v)) {
+      if (!py::isinstance<py::str>(kv.first))
+        throw py::type_error("Parameters: dict keys must be str");
+      const std::string sub = kv.first.cast<std::string>();
+      set_py_value(p, key.empty() ? sub : key + "." + sub, kv.second);
+    }
+    return;
+  }
+  if (py::isinstance<py::list>(v) || py::isinstance<py::tuple>(v)) {
+    const auto seq = py::reinterpret_borrow<py::sequence>(v);
+    bool nested = false;
+    for (const auto& item : seq)
+      if (py::isinstance<py::dict>(item) || py::isinstance<py::list>(item) ||
+          py::isinstance<py::tuple>(item)) {
+        nested = true;
+        break;
+      }
+    if (nested) {
+      std::size_t i = 0;
+      for (const auto& item : seq) set_py_value(p, key + "." + std::to_string(i++), item);
+      return;
+    }
+    // Scalar list: same homogeneous inference as the YAML loader.
+    bool all_bool = true, all_int = true, all_num = true, all_str = true;
+    for (const auto& item : seq) {
+      const bool is_bool = py::isinstance<py::bool_>(item);
+      const bool is_int = !is_bool && py::isinstance<py::int_>(item);
+      all_bool &= is_bool;
+      all_int &= is_int;
+      all_num &= is_int || py::isinstance<py::float_>(item);
+      all_str &= py::isinstance<py::str>(item);
+    }
+    if (py::len(seq) == 0) return p.set(key, std::vector<std::string>{});
+    if (all_int) return p.set(key, seq.cast<std::vector<std::int64_t>>());
+    if (all_num) return p.set(key, seq.cast<std::vector<double>>());
+    if (all_bool) return p.set(key, seq.cast<std::vector<bool>>());
+    if (all_str) return p.set(key, seq.cast<std::vector<std::string>>());
+    throw py::type_error("Parameters: lists must be homogeneous bool, int, float, or str ('" + key +
+                         "')");
+  }
+  throw py::type_error("Parameters: unsupported value type '" +
+                       py::str(py::type::of(v)).cast<std::string>() + "' for key '" + key + "'");
+}
+
+py::object get_py(const wavo::Parameters& p, const std::string& key) {
+  if (!p.has(key)) throw py::key_error(key);
+  return py::cast(p.raw(key));
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_core, m) {
   m.doc() = "WaVO C++ core — Fourier-based visual odometry";
+
+  py::class_<wavo::Parameters>(m, "Parameters")
+      .def(py::init<>())
+      .def(py::init([](const py::dict& values) {
+             wavo::Parameters p;
+             set_py_value(p, "", values);
+             return p;
+           }),
+           py::arg("values"),
+           "Builds from a (possibly nested) dict: nesting flattens into dotted\n"
+           "keys and lists of dicts get a numeric segment per element, exactly\n"
+           "like the YAML loader. None values are skipped.")
+      .def_static("from_yaml", &wavo::Parameters::fromYaml, py::arg("path"),
+                  "Loads a YAML config file.")
+      .def_static("from_yaml_string", &wavo::Parameters::fromYamlString, py::arg("text"))
+      .def("get", &get_py, py::arg("key"), "Raises KeyError on a missing key.")
+      .def(
+          "get",
+          [](const wavo::Parameters& p, const std::string& key, const py::object& fallback) {
+            return p.has(key) ? py::cast(p.raw(key)) : fallback;
+          },
+          py::arg("key"), py::arg("default"), "Missing keys return `default`.")
+      .def("set", &set_py_value, py::arg("key"), py::arg("value"),
+           "Dicts flatten under `key`; None is skipped (the YAML null behavior).")
+      .def("has", &wavo::Parameters::has, py::arg("key"))
+      .def("keys", &wavo::Parameters::keys)
+      .def("scoped", &wavo::Parameters::scoped, py::arg("prefix"),
+           "Copy of the entries under 'prefix.' with the prefix stripped.")
+      .def("__contains__", &wavo::Parameters::has)
+      .def("__getitem__", &get_py);
+  // Lets any bound function taking Parameters accept a plain dict.
+  py::implicitly_convertible<py::dict, wavo::Parameters>();
 
   py::module image = m.def_submodule("image", "RGB-D frames for registration");
 
@@ -144,15 +244,23 @@ PYBIND11_MODULE(_core, m) {
       .def(py::init<const cv::Mat&, const cv::Mat&, const CameraIntrinsics&>(), py::arg("bgr"),
            py::arg("depth"), py::arg("intrinsics"),
            "Undistorts bgr (uint8 HxWx3) / depth (HxW) on construction and\n"
-           "precomputes the windowed, square and log-polar DFTs.")
+           "caches the image-domain registration inputs (zero-mean gray,\n"
+           "square padding, smoothing windows). No spectra are stored.")
+      .def(
+          "compute_dfts",
+          [](const RGBDFrame& f) {
+            cv::Mat dft, square_dft, logpolar_dft;
+            f.compute_dfts(dft, square_dft, logpolar_dft);
+            return py::make_tuple(dft, square_dft, logpolar_dft);
+          },
+          "(dft, square_dft, logpolar_dft) of the frame, all (H, W, 2).")
       .def_property_readonly("intrinsics", &RGBDFrame::intrinsics)
       .def_property_readonly("color", &RGBDFrame::color)
       .def_property_readonly("depth", &RGBDFrame::depth)
       .def_property_readonly("gray", &RGBDFrame::gray)
       .def_property_readonly("gray_zero_mean", &RGBDFrame::gray_zero_mean)
-      .def_property_readonly("dft", &RGBDFrame::dft)
-      .def_property_readonly("shifted_dft", &RGBDFrame::shifted_dft)
-      .def_property_readonly("square_dft", &RGBDFrame::square_dft)
+      .def_property_readonly("square_gray_zero_mean", &RGBDFrame::square_gray_zero_mean)
+      .def_property_readonly("square_window", &RGBDFrame::square_window)
       .def_property_readonly(
           "shape", [](const RGBDFrame& f) { return py::make_tuple(f.gray().rows, f.gray().cols); })
       .def_property_readonly("square_shape",
@@ -165,36 +273,24 @@ PYBIND11_MODULE(_core, m) {
                                                    f.square_pad_offset().y};
                                return py::array_t<float>(2, v);
                              })
-      .def_property_readonly("log_polar_dft", &RGBDFrame::log_polar_dft)
       .def_property_readonly("max_log_polar_radius", &RGBDFrame::max_log_polar_radius)
       .def_property_readonly("n_theta_rows", &RGBDFrame::n_theta_rows)
-      .def("get_log_polar",
-           [](const RGBDFrame& f) {
-             return py::make_tuple(f.log_polar_dft(), f.max_log_polar_radius(), f.n_theta_rows());
-           })
       .def(
           "affine_transform",
           [](const RGBDFrame& f, const cv::Mat& rot_mat, std::pair<int, int> dsize) {
             return f.affine_transform(rot_mat, to_size(dsize));
           },
           py::arg("rot_mat"), py::arg("dsize"),
-          "Warp color+depth by the 2x3 rot_mat into a (width, height) canvas.")
-      .def(
-          "rectified_square_dft",
-          [](const RGBDFrame& f, const cv::Mat& rot_mat, std::pair<int, int> dsize) {
-            return f.rectified_square_dft(rot_mat, to_size(dsize));
-          },
-          py::arg("rot_mat"), py::arg("dsize"),
-          "Windowed DFT of the square zero-mean gray warped by rot_mat.");
+          "Warp color+depth by the 2x3 rot_mat into a (width, height) canvas.");
 
   py::module fft = image.def_submodule("fft", "Spectra and phase correlation");
   fft.def("fftshift", &wavo::image::fftshift, py::arg("m"),
           "np.fft.fftshift over the two spatial axes.");
   fft.def("compute_fft", &wavo::image::compute_fft, py::arg("img"), py::arg("window") = cv::Mat(),
           py::arg("shifted") = false, "DFT of img * window as an (H, W, 2) array.");
-  fft.def("phase_correlation", &wavo::image::phase_correlation, py::arg("src_dft"),
-          py::arg("target_dft"), py::arg("normalize") = true, py::arg("eps_rel") = 1e-3f,
-          "Correlation surface (fftshifted) between two spectra; eps_rel\n"
+  fft.def("correlate", &wavo::image::correlate, py::arg("src_dft"), py::arg("target_dft"),
+          py::arg("norm_alpha") = 0.0f,
+          "Correlation surface (fftshifted) between two spectra; norm_alpha\n"
           "regularizes the whitening against noise-dominated bins.");
   py::class_<wavo::image::Peak>(fft, "Peak", "Correlation peak (height + subpixel shift).")
       .def_readonly("value", &wavo::image::Peak::value)
@@ -243,12 +339,14 @@ PYBIND11_MODULE(_core, m) {
       .def("inverse_affine", &RegistrationResult::inverse_affine);
 
   py::class_<ImageRegistrator>(reg, "ImageRegistrator")
-      .def_static("register_best", &ImageRegistrator::register_best, py::arg("source"),
-                  py::arg("target"), py::arg("debug") = false)
-      .def_static("register_phase_correlation", &ImageRegistrator::register_phase_correlation,
-                  py::arg("source"), py::arg("target"), py::arg("debug") = false)
-      .def_static("register_fourier_mellin", &ImageRegistrator::register_fourier_mellin,
-                  py::arg("source"), py::arg("target"), py::arg("debug") = false);
+      .def(py::init<const std::string&, float>(), py::arg("type"), py::arg("norm_alpha") = 0.f,
+           "type: 'best' | 'correlation' | 'fourier_mellin'.")
+      .def(py::init<const wavo::Parameters&>(), py::arg("params"),
+           "Validated against the class schema: requires 'type', optional\n"
+           "'norm_alpha' (0.0). A plain dict also works:\n"
+           "ImageRegistrator({'type': 'best'}).")
+      .def("run", &ImageRegistrator::run, py::arg("source"), py::arg("target"),
+           py::arg("debug") = false, "Registers source onto target with the configured method.");
 
   py::module pointcloud = m.def_submodule("pointcloud", "Point-cloud utilities");
 
@@ -273,10 +371,12 @@ PYBIND11_MODULE(_core, m) {
 
   pointcloud.def(
       "find_dense_correspondences_3d",
-      [](const RGBDFrame& source, const RGBDFrame& target, int stride,
+      [](const RGBDFrame& source, const RGBDFrame& target,
+         const wavo::image::RegistrationResult& registration, int stride,
          float min_grad) -> py::tuple {
         const wavo::pointcloud::DenseCorrespondences c =
-            wavo::pointcloud::find_dense_correspondences_3d(source, target, stride, min_grad);
+            wavo::pointcloud::find_dense_correspondences_3d(source, target, registration, stride,
+                                                            min_grad);
         // The Mat caster maps empty Mats to None; keep the (0, 3) shape instead.
         if (c.xyz_source.empty()) {
           const std::vector<py::ssize_t> shape{0, 3};
@@ -285,15 +385,59 @@ PYBIND11_MODULE(_core, m) {
         }
         return py::make_tuple(c.xyz_source, c.xyz_target, c.bgr_source, c.bgr_target);
       },
-      py::arg("source"), py::arg("target"), py::arg("stride") = 6, py::arg("min_grad") = 8.f,
+      py::arg("source"), py::arg("target"), py::arg("registration"), py::arg("stride") = 6,
+      py::arg("min_grad") = 8.f,
       "(xyz_source, xyz_target, bgr_source, bgr_target) sampled on a\n"
-      "stride-spaced grid of textured source pixels after registering the\n"
-      "frames, keeping points with valid depth in both.");
+      "stride-spaced grid of textured source pixels, mapped through\n"
+      "registration.affine, keeping points with valid depth in both.");
 
   pointcloud.def("estimate_pose", &wavo::pointcloud::estimate_pose, py::arg("source"),
-                 py::arg("target"), py::arg("init_guess") = cv::Mat(), py::arg("stride") = 4,
+                 py::arg("target"), py::arg("registration"), py::arg("init_guess") = cv::Mat(),
+                 py::arg("stride") = 4,
                  "Rigid 4x4 source -> target pose from the dense 3D correspondences\n"
-                 "(closed-form point-to-point Umeyama via Open3D).");
+                 "induced by `registration` (closed-form point-to-point Umeyama via\n"
+                 "Open3D).");
+
+  py::module odom = m.def_submodule("odom", "Frame-to-frame visual odometry");
+
+  using wavo::odom::BaseVisualOdometer;
+  using wavo::odom::FMUmeyamaOdometer;
+  using wavo::odom::StampedTransform;
+
+  py::class_<StampedTransform>(odom, "StampedTransform",
+                               "Relative transform between the last (prev, curr) pair the\n"
+                               "odometer estimated, stamped with both frame times. The 4x4\n"
+                               "transform maps prev-frame points into curr's camera frame;\n"
+                               "None until two frames were estimated.")
+      .def_readonly("transform", &StampedTransform::transform)
+      .def_readonly("t_prev", &StampedTransform::t_prev)
+      .def_readonly("t_curr", &StampedTransform::t_curr);
+
+  py::class_<BaseVisualOdometer>(odom, "BaseVisualOdometer",
+                                 "Owns the (prev, curr) frame pair and the timeline; concrete\n"
+                                 "odometers implement the relative-motion estimate. No pose\n"
+                                 "integration happens here. Thread-safe.")
+      .def(
+          "add_frame",
+          [](BaseVisualOdometer& self, RGBDFrame& frame, double timestamp) {
+            self.add_frame(std::move(frame), timestamp);
+          },
+          py::arg("frame"), py::arg("timestamp"), py::call_guard<py::gil_scoped_release>(),
+          "Adopts `frame` as the current frame. The Python frame is consumed\n"
+          "(moved into the odometer) — do not use it afterwards. `timestamp`\n"
+          "is the sensor capture time in seconds, strictly increasing.")
+      .def("get_transform", &BaseVisualOdometer::get_transform,
+           py::call_guard<py::gil_scoped_release>(),
+           "Relative transform of the newest (prev, curr) pair, computing it\n"
+           "first if not estimated yet (cached — repeated calls without a new\n"
+           "frame return the same result; check the stamps).");
+
+  py::class_<FMUmeyamaOdometer, BaseVisualOdometer>(odom, "FMUmeyamaOdometer")
+      .def(py::init<ImageRegistrator, bool>(), py::arg("registrator"), py::arg("debug") = false)
+      .def(py::init<const wavo::Parameters&>(), py::arg("params"),
+           "Validated against the class schema: the 'registration' subspace\n"
+           "holds ImageRegistrator's schema. A plain dict also works:\n"
+           "FMUmeyamaOdometer({'registration': {'type': 'best'}}).");
 
 #ifdef WAVO_VERSION_INFO
   m.attr("__version__") = WAVO_VERSION_INFO;
