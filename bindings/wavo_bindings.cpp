@@ -19,6 +19,8 @@
 #include "image/fft.hpp"
 #include "pointcloud/utils.hpp"
 
+#include "odom/FMUmeyamaOdometer.hpp"
+
 namespace py = pybind11;
 
 // numpy <-> cv::Mat, zero-copy both ways: loaded Mats wrap the numpy buffer
@@ -395,6 +397,47 @@ PYBIND11_MODULE(_core, m) {
                  "Rigid 4x4 source -> target pose from the dense 3D correspondences\n"
                  "induced by `registration` (closed-form point-to-point Umeyama via\n"
                  "Open3D).");
+
+  py::module odom = m.def_submodule("odom", "Frame-to-frame visual odometry");
+
+  using wavo::odom::BaseVisualOdometer;
+  using wavo::odom::FMUmeyamaOdometer;
+  using wavo::odom::StampedTransform;
+
+  py::class_<StampedTransform>(odom, "StampedTransform",
+                               "Relative transform between the last (prev, curr) pair the\n"
+                               "odometer estimated, stamped with both frame times. The 4x4\n"
+                               "transform maps prev-frame points into curr's camera frame;\n"
+                               "None until two frames were estimated.")
+      .def_readonly("transform", &StampedTransform::transform)
+      .def_readonly("t_prev", &StampedTransform::t_prev)
+      .def_readonly("t_curr", &StampedTransform::t_curr);
+
+  py::class_<BaseVisualOdometer>(odom, "BaseVisualOdometer",
+                                 "Owns the (prev, curr) frame pair and the timeline; concrete\n"
+                                 "odometers implement the relative-motion estimate. No pose\n"
+                                 "integration happens here. Thread-safe.")
+      .def(
+          "add_frame",
+          [](BaseVisualOdometer& self, RGBDFrame& frame, double timestamp) {
+            self.add_frame(std::move(frame), timestamp);
+          },
+          py::arg("frame"), py::arg("timestamp"), py::call_guard<py::gil_scoped_release>(),
+          "Adopts `frame` as the current frame. The Python frame is consumed\n"
+          "(moved into the odometer) — do not use it afterwards. `timestamp`\n"
+          "is the sensor capture time in seconds, strictly increasing.")
+      .def("get_transform", &BaseVisualOdometer::get_transform,
+           py::call_guard<py::gil_scoped_release>(),
+           "Relative transform of the newest (prev, curr) pair, computing it\n"
+           "first if not estimated yet (cached — repeated calls without a new\n"
+           "frame return the same result; check the stamps).");
+
+  py::class_<FMUmeyamaOdometer, BaseVisualOdometer>(odom, "FMUmeyamaOdometer")
+      .def(py::init<ImageRegistrator, bool>(), py::arg("registrator"), py::arg("debug") = false)
+      .def(py::init<const wavo::Parameters&>(), py::arg("params"),
+           "Validated against the class schema: the 'registration' subspace\n"
+           "holds ImageRegistrator's schema. A plain dict also works:\n"
+           "FMUmeyamaOdometer({'registration': {'type': 'best'}}).");
 
 #ifdef WAVO_VERSION_INFO
   m.attr("__version__") = WAVO_VERSION_INFO;

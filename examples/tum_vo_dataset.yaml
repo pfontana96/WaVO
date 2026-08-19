@@ -1,0 +1,4 @@
+registration:
+  best:
+  norm_alpha: 0.5
+  type: best

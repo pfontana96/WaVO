@@ -251,6 +251,14 @@ class ParameterSchema {
     return *this;
   }
 
+  /// Merges every spec of `sub` under "<prefix>.<key>", so a component's
+  /// schema can embed a sub-component's contract in the subspace that
+  /// Parameters::scoped(prefix) will later hand to it.
+  ParameterSchema& include(const std::string& prefix, const ParameterSchema& sub) {
+    for (const auto& [key, spec] : sub.specs_) specs_[prefix + "." + key] = spec;
+    return *this;
+  }
+
   /// Returns `params` coerced to the declared types with defaults filled in.
   /// Throws one std::runtime_error listing every problem at once: missing
   /// required keys, type mismatches, and — unless allow_unknown — keys not
